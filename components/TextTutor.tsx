@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect, useContext, createContext, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Send, Image as ImageIcon, Volume2, Search, BrainCircuit, Mic, Ear, RefreshCw, AlertCircle, Trash2, StopCircle, X, History, TrendingUp, Calendar } from 'lucide-react';
@@ -288,10 +289,11 @@ const TextTutor: React.FC<Props> = ({ language, level }) => {
       saveChatMessage(botMsg);
     } catch (error) {
       console.error(error);
+      const friendlyMsg = getFriendlyErrorMessage(error);
       const errorMsg: ChatMessage = {
         id: Date.now().toString(),
         role: 'model',
-        text: getFriendlyErrorMessage(error)
+        text: `⚠️ ${friendlyMsg}\n\nPlease try again or rephrase your sentence.`
       };
       setMessages(prev => [...prev, errorMsg]);
     } finally {
@@ -431,29 +433,40 @@ const TextTutor: React.FC<Props> = ({ language, level }) => {
     }
   };
 
-  const playWordAudio = async (text: string) => {
+  // Consolidated TTS handler with user feedback
+  const playAudioWithFallback = async (text: string, cacheKey: string): Promise<ArrayBuffer | null> => {
     try {
-      if (audioCache.current[text]) {
-        try {
-            await playRawAudio(audioCache.current[text]);
-            return;
-        } catch (e) {
-            console.warn("Cached word audio corrupted, regenerating...");
-            delete audioCache.current[text];
-        }
+      const buffer = await generateSpeech(text);
+      audioCache.current[cacheKey] = buffer;
+      await playRawAudio(buffer);
+      return buffer;
+    } catch (error) {
+      console.warn("Gemini TTS failed, falling back to browser speech:", error);
+      
+      // Construct friendly message
+      let errorMsg = getFriendlyErrorMessage(error);
+      if (errorMsg.includes("Quota") || errorMsg.includes("unavailable")) {
+         errorMsg = "AI Voice unavailable (Quota/Net), using system voice.";
+      } else {
+         errorMsg = "Using system voice fallback.";
       }
-      try {
-        const buffer = await generateSpeech(text);
-        audioCache.current[text] = buffer;
-        await playRawAudio(buffer);
-      } catch (geminiError) {
-        console.warn("Gemini TTS failed, using browser fallback", geminiError);
-        speakBrowser(text);
-      }
-    } catch (err) {
-      console.error("Word TTS Error:", err);
+      
+      showGeneralError(errorMsg);
       speakBrowser(text);
+      return null;
     }
+  };
+
+  const playWordAudio = async (text: string) => {
+    if (audioCache.current[text]) {
+      try {
+          await playRawAudio(audioCache.current[text]);
+          return;
+      } catch (e) {
+          delete audioCache.current[text];
+      }
+    }
+    await playAudioWithFallback(text, text);
   };
 
   const handleAudioPlay = async (text: string, msgId: string) => {
@@ -471,13 +484,6 @@ const TextTutor: React.FC<Props> = ({ language, level }) => {
       if (audioCache.current[text]) {
          try {
              await playRawAudio(audioCache.current[text]);
-             
-             // Backfill DB if needed
-             if (!currentMsg?.audio) {
-                 const base64 = arrayBufferToBase64(audioCache.current[text]);
-                 setMessages(prev => prev.map(m => m.id === msgId ? { ...m, audio: base64 } : m));
-                 updateMessageAudio(msgId, base64).catch(e => {});
-             }
              return; 
          } catch (e) {
              delete audioCache.current[text];
@@ -496,23 +502,18 @@ const TextTutor: React.FC<Props> = ({ language, level }) => {
          }
       }
 
-      // 3. Generate New Audio
-      try {
-         const buffer = await generateSpeech(text);
-         audioCache.current[text] = buffer;
-         await playRawAudio(buffer);
-         
-         // Persist
+      // 3. Generate New Audio with fallback
+      const buffer = await playAudioWithFallback(text, text);
+      if (buffer) {
+         // Persist success
          const base64 = arrayBufferToBase64(buffer);
          setMessages(prev => prev.map(m => m.id === msgId ? { ...m, audio: base64 } : m));
          updateMessageAudio(msgId, base64).catch(e => console.error("Audio save failed", e));
-      } catch (geminiError) {
-         console.warn("Gemini TTS failed, using browser fallback", geminiError);
-         speakBrowser(text);
       }
     } catch (e: any) {
       console.error("Playback failed completely", e);
       speakBrowser(text);
+      showGeneralError("Audio playback failed.");
     } finally {
       // Only clear if we are still the active message
       setPlayingMsgId(prev => prev === msgId ? null : prev);
