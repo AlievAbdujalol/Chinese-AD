@@ -7,6 +7,15 @@
     <title>Chinese HSK Tutor AI</title>
     <!-- Fix 404: Add Favicon (Red circle with 中) -->
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='50' fill='%23dc2626'/%3E%3Ctext x='50' y='50' font-family='sans-serif' font-size='60' text-anchor='middle' dy='.35em' fill='white' font-weight='bold'%3E中%3C/text%3E%3C/svg%3E">
+    <link rel="shortcut icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='50' fill='%23dc2626'/%3E%3Ctext x='50' y='50' font-family='sans-serif' font-size='60' text-anchor='middle' dy='.35em' fill='white' font-weight='bold'%3E中%3C/text%3E%3C/svg%3E">
+    <script>
+      // Suppress Tailwind CDN warning for clean console in dev/demo environment
+      const originalWarn = console.warn;
+      console.warn = function(...args) {
+        if (args[0] && typeof args[0] === 'string' && args[0].includes('cdn.tailwindcss.com')) return;
+        originalWarn.apply(console, args);
+      };
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
       @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap');
