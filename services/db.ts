@@ -46,7 +46,10 @@ interface HSKTutorDB extends DBSchema {
   };
   user_goals: {
     key: string; // 'goals'
-    value: UserGoals;
+    value: {
+      key: string;
+      value: UserGoals;
+    };
   };
 }
 
@@ -533,7 +536,7 @@ export const getPronunciationHistory = async (word: string): Promise<Pronunciati
   if (results.length === 0) {
     try {
       const localDb = await initDB();
-      results = await localDb.getAllByIndex('pronunciation_history', 'by-word', word);
+      results = await localDb.getAllFromIndex('pronunciation_history', 'by-word', word);
       results.sort((a, b) => b.timestamp - a.timestamp);
       results = results.slice(0, 10);
     } catch (e) {
@@ -557,7 +560,7 @@ export const saveUserGoals = async (goals: UserGoals) => {
 
   try {
     const localDb = await initDB();
-    await localDb.put('user_goals', { key: 'goals', value: goals } as any);
+    await localDb.put('user_goals', { key: 'goals', value: goals });
   } catch (e) { console.error("Local goal save failed", e); }
 };
 
