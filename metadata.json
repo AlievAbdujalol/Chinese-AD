@@ -1,0 +1,8 @@
+{
+  "name": "Chinese-AD",
+  "description": "A comprehensive AI-powered application for learning Chinese from HSK 1 to HSK 4, featuring real-time conversation practice, quizzes, and visual aids. Supports Russian, Tajik, and English.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
