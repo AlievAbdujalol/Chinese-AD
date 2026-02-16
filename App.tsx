@@ -13,7 +13,7 @@ import Login from './components/Login';
 import { AppMode, AppLanguage, HSKLevel } from './types';
 import { Menu, Globe, Settings } from 'lucide-react';
 import { auth } from './services/firebase';
-import firebase from 'firebase/compat/app';
+import { onAuthStateChanged, User } from 'firebase/auth';
 import { getLevelTheme } from './utils/theme';
 import { updateStudyTime } from './services/db';
 
@@ -28,33 +28,18 @@ const App: React.FC = () => {
   const [language, setLanguage] = useState<AppLanguage>(AppLanguage.EN);
   const [level, setLevel] = useState<HSKLevel>(HSKLevel.HSK1);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [user, setUser] = useState<firebase.User | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [isGuest, setIsGuest] = useState(false);
 
   useEffect(() => {
-    // Auth Listener
-    const unsubscribe = auth.onAuthStateChanged((currentUser) => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       setAuthLoading(false);
+      // Reset guest mode if actual login occurs
       if (currentUser) setIsGuest(false);
     });
-
-    // Safety timeout: If Firebase takes too long (e.g. network blocked), stop loading
-    const safetyTimer = setTimeout(() => {
-        setAuthLoading((prev) => {
-            if (prev) {
-                console.warn("Auth state change timed out. Falling back to login screen.");
-                return false;
-            }
-            return prev;
-        });
-    }, 5000);
-
-    return () => {
-        unsubscribe();
-        clearTimeout(safetyTimer);
-    };
+    return () => unsubscribe();
   }, []);
 
   // Study Timer Logic
@@ -79,7 +64,7 @@ const App: React.FC = () => {
       email: 'local-session',
       photoURL: null,
       providerData: []
-  } as unknown as firebase.User;
+  } as unknown as User;
 
   const activeUser = user || (isGuest ? guestUser : null);
 

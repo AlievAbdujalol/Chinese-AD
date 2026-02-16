@@ -1,7 +1,6 @@
-
 import React, { useState } from 'react';
 import { generateVisualAid, getFriendlyErrorMessage } from '../services/gemini';
-import { Image as LucideImage, Download, AlertCircle } from 'lucide-react';
+import { ImageIcon, Download, RefreshCw, Key, AlertCircle } from 'lucide-react';
 import { AppLanguage } from '../types';
 import { translations } from '../utils/translations';
 
@@ -59,7 +58,7 @@ const ImageGen: React.FC<Props> = ({ language = AppLanguage.EN }) => {
       <div className="max-w-2xl w-full bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-2xl font-bold flex items-center">
-            <LucideImage className="mr-2 text-red-600" /> 
+            <ImageIcon className="mr-2 text-red-600" /> 
             {t.title}
           </h2>
         </div>

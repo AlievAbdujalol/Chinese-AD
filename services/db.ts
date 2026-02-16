@@ -1,8 +1,7 @@
-
 import { openDB, DBSchema, IDBPDatabase } from 'idb';
 import { HSKLevel, VocabCard, ChatMessage, AppLanguage, PronunciationAttempt, UserGoals, DailyProgress } from '../types';
 import { auth, db } from './firebase'; // Import Firebase
-import firebase from 'firebase/compat/app';
+import { collection, addDoc, query, where, getDocs, orderBy, limit, doc, setDoc, deleteDoc, getDoc, QuerySnapshot, DocumentData } from 'firebase/firestore';
 
 interface HSKTutorDB extends DBSchema {
   results: {
@@ -46,10 +45,7 @@ interface HSKTutorDB extends DBSchema {
   };
   user_goals: {
     key: string; // 'goals'
-    value: {
-      key: string;
-      value: UserGoals;
-    };
+    value: UserGoals;
   };
 }
 
@@ -118,7 +114,8 @@ export const saveResult = async (type: 'quiz' | 'exam', score: number, total: nu
   if (user) {
     // CLOUD
     try {
-      await withTimeout(db.collection('users').doc(user.uid).collection('results').add(data));
+      const resultsRef = collection(db, 'users', user.uid, 'results');
+      await withTimeout(addDoc(resultsRef, data));
       savedToCloud = true;
     } catch (e) {
       console.debug("Cloud save skipped (offline/timeout):", e);
@@ -144,9 +141,9 @@ export const getRecentResults = async () => {
   if (user) {
     // CLOUD
     try {
-      const snapshot = await withTimeout(
-        db.collection('users').doc(user.uid).collection('results').orderBy('timestamp', 'desc').limit(20).get()
-      ) as firebase.firestore.QuerySnapshot<firebase.firestore.DocumentData>;
+      const resultsRef = collection(db, 'users', user.uid, 'results');
+      const q = query(resultsRef, orderBy('timestamp', 'desc'), limit(20));
+      const snapshot = await withTimeout<QuerySnapshot<DocumentData>>(getDocs(q));
       snapshot.forEach(doc => results.push(doc.data()));
       fetchedFromCloud = true;
     } catch (e) {
@@ -194,9 +191,8 @@ export const saveVocabProgress = async (card: VocabCard, level: HSKLevel, rating
   if (user) {
     // CLOUD
     try {
-      await withTimeout(
-        db.collection('users').doc(user.uid).collection('vocabulary').doc(card.character).set(vocabData, { merge: true })
-      );
+      const docRef = doc(db, 'users', user.uid, 'vocabulary', card.character);
+      await withTimeout(setDoc(docRef, vocabData, { merge: true }));
       savedToCloud = true;
     } catch (e) {
       console.debug("Cloud save skipped (offline/timeout):", e);
@@ -230,6 +226,7 @@ export const toggleVocabBookmark = async (card: VocabCard, level: HSKLevel) => {
   if (user) {
     // CLOUD
     try {
+      const docRef = doc(db, 'users', user.uid, 'vocabulary', card.character);
       const updateData = {
           character: card.character,
           pinyin: card.pinyin,
@@ -240,9 +237,7 @@ export const toggleVocabBookmark = async (card: VocabCard, level: HSKLevel) => {
           bookmarked: newBookmarkState,
           lastReviewed: Date.now()
       };
-      await withTimeout(
-        db.collection('users').doc(user.uid).collection('vocabulary').doc(card.character).set(updateData, { merge: true })
-      );
+      await withTimeout(setDoc(docRef, updateData, { merge: true }));
       savedToCloud = true;
     } catch (e) {
       console.debug("Cloud toggle skipped (offline/timeout):", e);
@@ -286,12 +281,9 @@ export const getBookmarkedWords = async (level: HSKLevel): Promise<VocabCard[]> 
   if (user) {
     // CLOUD
     try {
-      const snapshot = await withTimeout(
-        db.collection('users').doc(user.uid).collection('vocabulary')
-          .where("bookmarked", "==", true)
-          .where("level", "==", level)
-          .get()
-      ) as firebase.firestore.QuerySnapshot<firebase.firestore.DocumentData>;
+      const vocabRef = collection(db, 'users', user.uid, 'vocabulary');
+      const q = query(vocabRef, where("bookmarked", "==", true), where("level", "==", level));
+      const snapshot = await withTimeout<QuerySnapshot<DocumentData>>(getDocs(q));
       const cards = snapshot.docs.map(d => d.data() as VocabCard);
       return cards;
     } catch (e) {
@@ -337,9 +329,8 @@ export const getVocabStats = async () => {
   if (user) {
     // CLOUD
     try {
-      const snapshot = await withTimeout(
-        db.collection('users').doc(user.uid).collection('vocabulary').get()
-      ) as firebase.firestore.QuerySnapshot<firebase.firestore.DocumentData>;
+      const vocabRef = collection(db, 'users', user.uid, 'vocabulary');
+      const snapshot = await withTimeout<QuerySnapshot<DocumentData>>(getDocs(vocabRef));
       allVocab = snapshot.docs.map(d => d.data());
       fetchedFromCloud = true;
     } catch (e) {
@@ -382,7 +373,8 @@ export const getUserStats = async () => {
     let allVocab: any[] = [];
     if (user) {
         try {
-            const snap = await withTimeout(db.collection('users').doc(user.uid).collection('vocabulary').get()) as firebase.firestore.QuerySnapshot<firebase.firestore.DocumentData>;
+            const vocabRef = collection(db, 'users', user.uid, 'vocabulary');
+            const snap = await withTimeout<QuerySnapshot<DocumentData>>(getDocs(vocabRef));
             allVocab = snap.docs.map(d => d.data());
         } catch(e) { /* ignore offline */ }
     }
@@ -398,7 +390,8 @@ export const getUserStats = async () => {
      let allResults: any[] = [];
      if (user) {
          try {
-             const snap = await withTimeout(db.collection('users').doc(user.uid).collection('results').get()) as firebase.firestore.QuerySnapshot<firebase.firestore.DocumentData>;
+             const resRef = collection(db, 'users', user.uid, 'results');
+             const snap = await withTimeout<QuerySnapshot<DocumentData>>(getDocs(resRef));
              allResults = snap.docs.map(d => d.data());
          } catch(e) { /* ignore offline */ }
      }
@@ -432,12 +425,11 @@ export const saveChatMessage = async (msg: ChatMessage) => {
   const user = getUser();
   if (user) {
     try {
-      await withTimeout(
-        db.collection('users').doc(user.uid).collection('chat_history').doc(msg.id).set({
-          ...msg,
-          timestamp: Date.now()
-        })
-      );
+      const chatRef = collection(db, 'users', user.uid, 'chat_history');
+      await withTimeout(setDoc(doc(chatRef, msg.id), {
+        ...msg,
+        timestamp: Date.now()
+      }));
     } catch (e) {
       console.debug("Cloud chat save skipped", e);
     }
@@ -448,7 +440,8 @@ export const updateMessageAudio = async (msgId: string, audioBase64: string) => 
   const user = getUser();
   if (user) {
     try {
-      await db.collection('users').doc(user.uid).collection('chat_history').doc(msgId).set({ audio: audioBase64 }, { merge: true });
+      const chatRef = doc(db, 'users', user.uid, 'chat_history', msgId);
+      await setDoc(chatRef, { audio: audioBase64 }, { merge: true });
     } catch (e) {
       console.debug("Cloud audio update skipped", e);
     }
@@ -460,9 +453,9 @@ export const getChatHistory = async (): Promise<ChatMessage[]> => {
   if (!user) return [];
   
   try {
-    const snapshot = await withTimeout(
-      db.collection('users').doc(user.uid).collection('chat_history').orderBy('timestamp', 'asc').limit(50).get()
-    ) as firebase.firestore.QuerySnapshot<firebase.firestore.DocumentData>;
+    const chatRef = collection(db, 'users', user.uid, 'chat_history');
+    const q = query(chatRef, orderBy('timestamp', 'asc'), limit(50));
+    const snapshot = await withTimeout<QuerySnapshot<DocumentData>>(getDocs(q));
     return snapshot.docs.map(d => {
         const data = d.data();
         return {
@@ -484,10 +477,10 @@ export const clearChatHistory = async () => {
     const user = getUser();
     if (!user) return;
     try {
-        const snapshot = await db.collection('users').doc(user.uid).collection('chat_history').get();
-        const batch = db.batch();
-        snapshot.docs.forEach(doc => batch.delete(doc.ref));
-        await batch.commit();
+        const chatRef = collection(db, 'users', user.uid, 'chat_history');
+        const snapshot = await getDocs(chatRef);
+        const promises = snapshot.docs.map(d => deleteDoc(d.ref));
+        await Promise.all(promises);
     } catch (e) {
         console.error("Clear chat error", e);
     }
@@ -502,7 +495,8 @@ export const savePronunciationAttempt = async (attempt: PronunciationAttempt) =>
 
   if (user) {
     try {
-      await db.collection('users').doc(user.uid).collection('pronunciation_history').doc(id).set(data);
+      const ref = doc(db, 'users', user.uid, 'pronunciation_history', id);
+      await setDoc(ref, data);
     } catch (e) {
       console.debug("Cloud pron save skipped", e);
     }
@@ -522,11 +516,9 @@ export const getPronunciationHistory = async (word: string): Promise<Pronunciati
 
   if (user) {
     try {
-      const snap = await db.collection('users').doc(user.uid).collection('pronunciation_history')
-        .where("word", "==", word)
-        .orderBy("timestamp", "desc")
-        .limit(10)
-        .get() as firebase.firestore.QuerySnapshot<firebase.firestore.DocumentData>;
+      const ref = collection(db, 'users', user.uid, 'pronunciation_history');
+      const q = query(ref, where("word", "==", word), orderBy("timestamp", "desc"), limit(10));
+      const snap = await getDocs(q);
       results = snap.docs.map(d => d.data() as PronunciationAttempt);
     } catch (e) {
       console.debug("Cloud pron fetch skipped", e);
@@ -536,7 +528,7 @@ export const getPronunciationHistory = async (word: string): Promise<Pronunciati
   if (results.length === 0) {
     try {
       const localDb = await initDB();
-      results = await localDb.getAllFromIndex('pronunciation_history', 'by-word', word);
+      results = await localDb.getAllByIndex('pronunciation_history', 'by-word', word);
       results.sort((a, b) => b.timestamp - a.timestamp);
       results = results.slice(0, 10);
     } catch (e) {
@@ -554,13 +546,14 @@ export const saveUserGoals = async (goals: UserGoals) => {
   
   if (user) {
     try {
-      await db.collection('users').doc(user.uid).collection('settings').doc('goals').set(goals);
+      const ref = doc(db, 'users', user.uid, 'settings', 'goals');
+      await setDoc(ref, goals);
     } catch (e) { console.debug("Cloud goal save skipped", e); }
   }
 
   try {
     const localDb = await initDB();
-    await localDb.put('user_goals', { key: 'goals', value: goals });
+    await localDb.put('user_goals', { key: 'goals', value: goals } as any);
   } catch (e) { console.error("Local goal save failed", e); }
 };
 
@@ -575,8 +568,9 @@ export const getUserGoals = async (): Promise<UserGoals> => {
 
   if (user) {
     try {
-      const snap = await db.collection('users').doc(user.uid).collection('settings').doc('goals').get();
-      if (snap.exists) return { ...defaultGoals, ...snap.data() } as UserGoals;
+      const ref = doc(db, 'users', user.uid, 'settings', 'goals');
+      const snap = await getDoc(ref);
+      if (snap.exists()) return { ...defaultGoals, ...snap.data() } as UserGoals;
     } catch (e) { console.debug("Cloud goal fetch skipped", e); }
   }
 
@@ -595,10 +589,10 @@ export const updateStudyTime = async (minutes: number) => {
 
   if (user) {
     try {
-      const ref = db.collection('users').doc(user.uid).collection('daily_stats').doc(dateKey);
-      const snap = await ref.get();
-      const current = snap.exists ? snap.data() : {};
-      await ref.set({ 
+      const ref = doc(db, 'users', user.uid, 'daily_stats', dateKey);
+      const snap = await getDoc(ref);
+      const current = snap.exists() ? snap.data() : {};
+      await setDoc(ref, { 
         ...current,
         date: dateKey, 
         minutes: (current.minutes || 0) + minutes 
@@ -621,10 +615,10 @@ export const updateSpeakingTime = async (minutes: number) => {
 
   if (user) {
     try {
-      const ref = db.collection('users').doc(user.uid).collection('daily_stats').doc(dateKey);
-      const snap = await ref.get();
-      const current = snap.exists ? snap.data() : {};
-      await ref.set({ 
+      const ref = doc(db, 'users', user.uid, 'daily_stats', dateKey);
+      const snap = await getDoc(ref);
+      const current = snap.exists() ? snap.data() : {};
+      await setDoc(ref, { 
         ...current,
         date: dateKey, 
         speakingMinutes: (current.speakingMinutes || 0) + minutes 
@@ -654,8 +648,9 @@ export const getDailyProgress = async (): Promise<DailyProgress> => {
   // 1. Get Time Stats
   if (user) {
     try {
-      const snap = await db.collection('users').doc(user.uid).collection('daily_stats').doc(dateKey).get();
-      if (snap.exists) {
+      const ref = doc(db, 'users', user.uid, 'daily_stats', dateKey);
+      const snap = await getDoc(ref);
+      if (snap.exists()) {
         const d = snap.data();
         minutes = d.minutes || 0;
         speakingMinutes = d.speakingMinutes || 0;
@@ -675,14 +670,16 @@ export const getDailyProgress = async (): Promise<DailyProgress> => {
   // 2. Get Words Reviewed Today
   if (user) {
     try {
-        const snap = await db.collection('users').doc(user.uid).collection('vocabulary')
-          .where("lastReviewed", ">=", startOfDay).get();
+        const ref = collection(db, 'users', user.uid, 'vocabulary');
+        const q = query(ref, where("lastReviewed", ">=", startOfDay));
+        const snap = await getDocs(q);
         words = snap.size;
     } catch(e) {}
     
     try {
-        const snap = await db.collection('users').doc(user.uid).collection('pronunciation_history')
-          .where("timestamp", ">=", startOfDay).get();
+        const ref = collection(db, 'users', user.uid, 'pronunciation_history');
+        const q = query(ref, where("timestamp", ">=", startOfDay));
+        const snap = await getDocs(q);
         pronCount = snap.size;
     } catch(e) {}
 

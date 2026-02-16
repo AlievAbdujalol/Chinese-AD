@@ -1,7 +1,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { AppLanguage, HSKLevel } from '../types';
-import firebase from 'firebase/compat/app';
+import { User } from 'firebase/auth';
 import { translations } from '../utils/translations';
 import { logout } from '../services/firebase';
 import { getUserStats, getUserGoals, saveUserGoals } from '../services/db';
@@ -9,7 +9,7 @@ import { LogOut, User as UserIcon, Settings, BookOpen, Award, FileText, Globe, T
 import { getLevelTheme } from '../utils/theme';
 
 interface Props {
-  user: firebase.User;
+  user: User;
   language: AppLanguage;
   level: HSKLevel;
   setLanguage: (lang: AppLanguage) => void;

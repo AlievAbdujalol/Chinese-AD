@@ -1,12 +1,10 @@
-
 import React, { useState, useRef, useEffect, useContext, createContext, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { Send, Image as ImageIcon, Volume2, Search, BrainCircuit, Mic, RefreshCw, AlertCircle, Trash2, StopCircle, X, History, Calendar } from 'lucide-react';
-import { generateTutorResponse, playTextToSpeech, evaluatePronunciation, getFriendlyErrorMessage, stopTtsAudio } from '../services/gemini';
-import { saveChatMessage, getChatHistory, clearChatHistory, savePronunciationAttempt, getPronunciationHistory } from '../services/db';
+import { Send, Image as ImageIcon, Volume2, Search, BrainCircuit, Mic, Ear, RefreshCw, AlertCircle, Trash2, StopCircle, X, History, TrendingUp, Calendar } from 'lucide-react';
+import { generateTutorResponse, playRawAudio, generateSpeech, transcribeAudio, evaluatePronunciation, getFriendlyErrorMessage, arrayBufferToBase64, base64ToUint8Array, stopTtsAudio, speakBrowser } from '../services/gemini';
+import { saveChatMessage, getChatHistory, clearChatHistory, updateMessageAudio, savePronunciationAttempt, getPronunciationHistory } from '../services/db';
 import { ChatMessage, AppLanguage, HSKLevel, PronunciationAttempt } from '../types';
 import { translations } from '../utils/translations';
-import { pinyin } from 'pinyin-pro';
 
 interface Props {
   language: AppLanguage;
@@ -18,61 +16,30 @@ interface Props {
 interface TutorContextType {
   activeWordRecording: string | null;
   handleWordRecord: (text: string) => void;
+  audioCache: Record<string, ArrayBuffer>;
   playAudio: (text: string) => Promise<void>;
   evaluationResult: { text: string; feedback: string } | null;
   setEvaluationResult: (res: { text: string; feedback: string } | null) => void;
   showWordHistory: (text: string) => void;
-  activeWordId: string | null;
-  setActiveWordId: (id: string | null) => void;
 }
 
 const TutorContext = createContext<TutorContextType>({
   activeWordRecording: null,
   handleWordRecord: () => {},
+  audioCache: {},
   playAudio: async () => {},
   evaluationResult: null,
   setEvaluationResult: () => {},
-  showWordHistory: () => {},
-  activeWordId: null,
-  setActiveWordId: () => {}
+  showWordHistory: () => {}
 });
 
-// Helper component for individual Chinese words (inline in markdown)
+// Helper component for individual Chinese words
 const ChineseWord: React.FC<{ text: string }> = ({ text }) => {
-  const { activeWordRecording, handleWordRecord, playAudio, evaluationResult, setEvaluationResult, showWordHistory, activeWordId, setActiveWordId } = useContext(TutorContext);
+  const { activeWordRecording, handleWordRecord, playAudio, evaluationResult, setEvaluationResult, showWordHistory } = useContext(TutorContext);
   const [loadingAudio, setLoadingAudio] = useState(false);
   
-  // Create a stable unique ID for this instance
-  const id = useMemo(() => Math.random().toString(36).substr(2, 9), []);
-  
-  const isActive = activeWordId === id;
   const isRecording = activeWordRecording === text;
   const hasFeedback = evaluationResult?.text === text;
-  
-  const py = useMemo(() => {
-      try {
-          return pinyin(text);
-      } catch (e) {
-          return '';
-      }
-  }, [text]);
-
-  const score = useMemo(() => {
-    if (hasFeedback && evaluationResult?.feedback) {
-        const match = evaluationResult.feedback.match(/\*\*Score\*\*:\s*(\d+)/i);
-        return match ? parseInt(match[1]) : null;
-    }
-    return null;
-  }, [hasFeedback, evaluationResult]);
-
-  const toggleMenu = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (isActive) {
-        setActiveWordId(null);
-    } else {
-        setActiveWordId(id);
-    }
-  };
 
   const play = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -96,92 +63,59 @@ const ChineseWord: React.FC<{ text: string }> = ({ text }) => {
   };
 
   return (
-    <span className="relative inline-block mx-1 align-middle">
+    <span className="relative inline-flex items-center mx-0.5 group whitespace-nowrap bg-gray-50 rounded px-1 border border-gray-100">
       <span 
-        onClick={toggleMenu}
-        className={`cursor-pointer rounded px-1.5 py-0.5 transition-all flex flex-col items-center leading-none group border ${isActive ? 'bg-red-50 border-red-200 shadow-sm' : 'border-transparent hover:bg-gray-100'}`}
-        title="Click for actions"
+        className="cursor-pointer hover:underline decoration-dotted decoration-2 underline-offset-4 transition-all text-gray-800 font-medium" 
+        onClick={play}
+        title="Click to pronounce"
       >
-        <span className="text-lg text-gray-800 font-medium">{text}</span>
-        <span className="text-[10px] text-gray-500 font-light mt-0.5">{py}</span>
+        {text}
       </span>
-      
-      {/* Floating Action Menu */}
-      {isActive && (
-          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 flex items-center space-x-1 bg-white shadow-xl border border-gray-100 rounded-full p-1 animate-fade-in whitespace-nowrap">
-              <button 
-                onClick={play}
-                className={`p-2 rounded-full hover:bg-red-50 text-gray-600 hover:text-red-600 transition-colors ${loadingAudio ? 'opacity-50' : ''}`}
-                title="Listen"
-              >
-                {loadingAudio ? (
-                  <RefreshCw size={14} className="animate-spin" />
-                ) : (
-                  <Volume2 size={14} />
-                )}
-              </button>
-              <div className="w-px h-4 bg-gray-200"></div>
-              <button 
-                onClick={toggleRecord}
-                className={`p-2 rounded-full transition-colors ${isRecording ? 'bg-red-100 text-red-600 animate-pulse' : 'hover:bg-red-50 text-gray-600 hover:text-red-600'}`}
-                title="Practice"
-              >
-                {isRecording ? (
-                   <StopCircle size={14} fill="currentColor" />
-                ) : (
-                   <Mic size={14} />
-                )}
-              </button>
-              <div className="w-px h-4 bg-gray-200"></div>
-              <button 
-                onClick={openHistory}
-                className="p-2 rounded-full hover:bg-blue-50 text-gray-600 hover:text-blue-600 transition-colors"
-                title="History"
-              >
-                 <History size={14} />
-              </button>
-              
-              {/* Arrow */}
-              <div className="absolute top-full left-1/2 -translate-x-1/2 w-2 h-2 bg-white border-b border-r border-gray-100 rotate-45 -mt-1"></div>
-          </div>
-      )}
+      <div className="flex items-center ml-1 space-x-0.5">
+          <button 
+            onClick={play}
+            className={`p-1 rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-700 transition-colors ${loadingAudio ? 'opacity-100' : 'opacity-40 group-hover:opacity-100'}`}
+            title="Listen"
+          >
+            {loadingAudio ? (
+              <RefreshCw size={10} className="animate-spin" />
+            ) : (
+              <Volume2 size={12} fill="currentColor" />
+            )}
+          </button>
+          <button 
+            onClick={toggleRecord}
+            className={`p-1 rounded-full transition-colors ${isRecording ? 'bg-red-100 text-red-600 animate-pulse' : 'hover:bg-gray-200 text-gray-400 hover:text-red-500 opacity-40 group-hover:opacity-100'}`}
+            title="Practice Pronunciation"
+          >
+            {isRecording ? (
+               <StopCircle size={12} fill="currentColor" />
+            ) : (
+               <Mic size={12} />
+            )}
+          </button>
+          <button 
+            onClick={openHistory}
+            className="p-1 rounded-full hover:bg-gray-200 text-gray-400 hover:text-blue-500 opacity-40 group-hover:opacity-100 transition-colors"
+            title="View History"
+          >
+             <History size={12} />
+          </button>
+      </div>
 
-      {/* Evaluation Feedback Popover */}
       {hasFeedback && (
-        <div className="absolute top-full left-1/2 -translate-x-1/2 mt-3 w-72 z-[60] animate-fade-in">
-            <div className={`bg-white rounded-xl shadow-2xl border p-4 relative text-left ${
-                score !== null && score >= 8 ? 'border-green-200' :
-                score !== null && score >= 5 ? 'border-yellow-200' :
-                'border-red-200'
-            }`}>
+        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 z-[60] animate-fade-in pointer-events-auto">
+            <div className="bg-white rounded-xl shadow-2xl border border-blue-100 p-4 relative">
                 <button 
                     onClick={(e) => { e.stopPropagation(); setEvaluationResult(null); }}
-                    className="absolute top-2 right-2 text-gray-400 hover:text-gray-600 p-1"
+                    className="absolute top-2 right-2 text-gray-400 hover:text-gray-600"
                 >
                     <X size={14} />
                 </button>
-
-                {score !== null && (
-                    <div className="flex justify-center mb-3">
-                         <div className={`px-4 py-1.5 rounded-full text-sm font-bold shadow-sm flex items-center ${
-                            score >= 8 ? 'bg-green-100 text-green-700' :
-                            score >= 5 ? 'bg-yellow-100 text-yellow-700' :
-                            'bg-red-100 text-red-700'
-                        }`}>
-                            Score: {score}/10
-                        </div>
-                    </div>
-                )}
-
-                <div className="prose prose-sm text-gray-800 text-xs max-h-60 overflow-y-auto custom-scrollbar">
+                <div className="prose prose-sm text-gray-800">
                     <ReactMarkdown>{evaluationResult.feedback}</ReactMarkdown>
                 </div>
-                
-                <div className={`absolute bottom-full left-1/2 -translate-x-1/2 w-3 h-3 bg-white border-t border-l rotate-45 -mb-1.5 ${
-                     score !== null && score >= 8 ? 'border-green-200' :
-                     score !== null && score >= 5 ? 'border-yellow-200' :
-                     'border-red-200'
-                }`}></div>
+                <div className="absolute top-full left-1/2 -translate-x-1/2 w-3 h-3 bg-white border-b border-r border-blue-100 rotate-45 -mt-1.5"></div>
             </div>
         </div>
       )}
@@ -189,10 +123,11 @@ const ChineseWord: React.FC<{ text: string }> = ({ text }) => {
   );
 };
 
+// Recursive helper to process markdown children and inject ChineseWord components
 const processChildren = (children: React.ReactNode): React.ReactNode => {
   return React.Children.map(children, child => {
       if (typeof child === 'string') {
-          // Improved regex to capture continuous Chinese segments better
+          // Regex to split by Chinese characters (ranges for standard CJK)
           const parts = child.split(/([\u4e00-\u9fa5]+)/g);
           return parts.map((part, i) => {
               if (/([\u4e00-\u9fa5]+)/.test(part)) {
@@ -202,10 +137,10 @@ const processChildren = (children: React.ReactNode): React.ReactNode => {
           });
       }
       if (React.isValidElement(child)) {
-           // Explicitly cast to access props
-           const element = child as React.ReactElement<{ children?: React.ReactNode }>;
-           if (element.props && element.props.children) {
-               return React.cloneElement(element, { ...element.props, children: processChildren(element.props.children) });
+           // @ts-ignore
+           if (child.props && child.props.children) {
+               // @ts-ignore
+               return React.cloneElement(child, { ...child.props, children: processChildren(child.props.children) });
            }
       }
       return child;
@@ -220,31 +155,26 @@ const TextTutor: React.FC<Props> = ({ language, level }) => {
   const [useSearch, setUseSearch] = useState(false);
   const [useThinking, setUseThinking] = useState(false);
   
+  // Recording State
   const [recordingMode, setRecordingMode] = useState<'none' | 'transcribe' | 'evaluate'>('none');
   const [activeWordRecording, setActiveWordRecording] = useState<string | null>(null);
   const recordingTargetRef = useRef<string | null>(null);
   const [evaluationResult, setEvaluationResult] = useState<{text: string, feedback: string} | null>(null);
-  const [activeWordId, setActiveWordId] = useState<string | null>(null);
   
+  // History Modal State
   const [historyWord, setHistoryWord] = useState<string | null>(null);
   const [historyData, setHistoryData] = useState<PronunciationAttempt[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   
+  // TTS & Error State
+  const [playingMsgId, setPlayingMsgId] = useState<string | null>(null);
   const [generalError, setGeneralError] = useState<string | null>(null);
   
-  // Persistent Session-based Text Cache
-  const [textCache, setTextCache] = useState<Record<string, { text: string; groundingChunks: any[] }>>(() => {
-    try {
-      const saved = sessionStorage.getItem('hsk_tutor_text_cache');
-      return saved ? JSON.parse(saved) : {};
-    } catch {
-      return {};
-    }
-  });
-
-  useEffect(() => {
-    sessionStorage.setItem('hsk_tutor_text_cache', JSON.stringify(textCache));
-  }, [textCache]);
+  // Audio Cache
+  const audioCache = useRef<Record<string, ArrayBuffer>>({});
+  
+  // Text Response Cache
+  const textCache = useRef<Record<string, { text: string; groundingChunks: any[] }>>({});
 
   const t = translations[language].tutor;
 
@@ -253,28 +183,25 @@ const TextTutor: React.FC<Props> = ({ language, level }) => {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
 
-  // Close active word menu when clicking anywhere else
-  useEffect(() => {
-    const handleClickOutside = () => setActiveWordId(null);
-    document.addEventListener('click', handleClickOutside);
-    return () => document.removeEventListener('click', handleClickOutside);
-  }, []);
-
+  // Memoize markdown components
   const markdownComponents = useMemo(() => ({
-      p: ({ children }: any) => <p className="mb-6 last:mb-0 leading-[2.5]">{processChildren(children)}</p>, // Increased leading for pinyin space
-      li: ({ children }: any) => <li className="mb-3 leading-[2.5]">{processChildren(children)}</li>,
-      strong: ({ children }: any) => <strong className="font-bold text-gray-900">{processChildren(children)}</strong>,
+      p: ({ children }: any) => <p className="mb-2 last:mb-0 leading-relaxed">{processChildren(children)}</p>,
+      li: ({ children }: any) => <li className="mb-1">{processChildren(children)}</li>,
+      strong: ({ children }: any) => <strong className="font-bold">{processChildren(children)}</strong>,
       em: ({ children }: any) => <em className="italic">{processChildren(children)}</em>,
-      h1: ({ children }: any) => <h1 className="text-xl font-bold mb-4 mt-2">{processChildren(children)}</h1>,
-      h2: ({ children }: any) => <h2 className="text-lg font-bold mb-3 mt-2">{processChildren(children)}</h2>,
+      h1: ({ children }: any) => <h1 className="text-xl font-bold mb-2">{processChildren(children)}</h1>,
+      h2: ({ children }: any) => <h2 className="text-lg font-bold mb-2">{processChildren(children)}</h2>,
       h3: ({ children }: any) => <h3 className="text-md font-bold mb-2">{processChildren(children)}</h3>,
-      blockquote: ({ children }: any) => <blockquote className="border-l-4 border-red-200 pl-4 italic my-4 bg-gray-50 p-2 rounded-r">{processChildren(children)}</blockquote>,
+      blockquote: ({ children }: any) => <blockquote className="border-l-4 border-gray-300 pl-4 italic my-2">{processChildren(children)}</blockquote>,
   }), []);
 
+  // Load history
   useEffect(() => {
     const loadHistory = async () => {
       const history = await getChatHistory();
-      if (history.length > 0) setMessages(history);
+      if (history.length > 0) {
+        setMessages(history);
+      }
     };
     loadHistory();
   }, []); 
@@ -291,37 +218,13 @@ const TextTutor: React.FC<Props> = ({ language, level }) => {
     setTimeout(() => setGeneralError(null), 4000);
   };
 
-  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setSelectedImage(reader.result as string);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const handleClearHistory = async () => {
-    if (window.confirm("Are you sure you want to clear your chat history?")) {
-      try {
-        await clearChatHistory();
-        setMessages([]);
-        setTextCache({});
-      } catch (e) {
-        showGeneralError(e);
-      }
-    }
-  };
-
   const handleSend = async () => {
-    const trimmedInput = input.trim();
-    if ((!trimmedInput && !selectedImage) || isLoading) return;
+    if ((!input.trim() && !selectedImage) || isLoading) return;
 
     const userMsg: ChatMessage = {
       id: Date.now().toString(),
       role: 'user',
-      text: trimmedInput,
+      text: input,
       image: selectedImage || undefined
     };
 
@@ -332,17 +235,17 @@ const TextTutor: React.FC<Props> = ({ language, level }) => {
     setSelectedImage(null);
     setIsLoading(true);
 
+    // Cache Key Logic
     const lastModelMsg = messages.filter(m => m.role === 'model').pop();
-    const normalizedInput = trimmedInput.toLowerCase();
-    const cacheKey = `${lastModelMsg?.id || 'root'}:${normalizedInput}:${language}:${level}:${useSearch}:${useThinking}`;
+    const cacheKey = `${lastModelMsg?.id || 'root'}:${userMsg.text.trim()}:${language}:${level}`;
 
     try {
       let responseText = "";
       let groundingChunks = undefined;
 
-      // 1. Check Text Cache for similar questions in the same session context
-      if (!userMsg.image && textCache[cacheKey]) {
-          const cached = textCache[cacheKey];
+      // Check Text Cache
+      if (!userMsg.image && textCache.current[cacheKey]) {
+          const cached = textCache.current[cacheKey];
           responseText = cached.text;
           groundingChunks = cached.groundingChunks;
       } else {
@@ -364,323 +267,450 @@ const TextTutor: React.FC<Props> = ({ language, level }) => {
           responseText = response.text || "No response generated.";
           groundingChunks = response.groundingChunks;
 
-          // 2. Update Text Cache
+          // Save to Cache
           if (!userMsg.image) {
-              setTextCache(prev => ({
-                ...prev,
-                [cacheKey]: { text: responseText, groundingChunks }
-              }));
+              textCache.current[cacheKey] = {
+                  text: responseText,
+                  groundingChunks
+              };
           }
       }
 
-      const modelMsg: ChatMessage = {
-        id: Date.now().toString(),
+      const botMsg: ChatMessage = {
+        id: (Date.now() + 1).toString(),
         role: 'model',
         text: responseText,
-        groundingUrls: groundingChunks?.map((c: any) => ({
-          title: c.web?.title || 'Source',
-          uri: c.web?.uri || ''
-        }))
+        groundingUrls: groundingChunks?.map((c: any) => c.web ? c.web : c.maps)
+                                                .filter((x: any) => x && x.uri)
       };
 
-      setMessages(prev => [...prev, modelMsg]);
-      saveChatMessage(modelMsg);
-
-    } catch (e) {
-      console.error(e);
-      showGeneralError(e);
+      setMessages(prev => [...prev, botMsg]);
+      saveChatMessage(botMsg);
+    } catch (error) {
+      console.error(error);
+      const errorMsg: ChatMessage = {
+        id: Date.now().toString(),
+        role: 'model',
+        text: getFriendlyErrorMessage(error)
+      };
+      setMessages(prev => [...prev, errorMsg]);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Implement Word Recording Logic
-  const handleWordRecord = async (text: string) => {
-    if (activeWordRecording === text) {
-        // Stop recording
-        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-            mediaRecorderRef.current.stop();
-        }
-        setRecordingMode('none');
-        setActiveWordRecording(null);
-    } else {
-        // Start recording
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            const mediaRecorder = new MediaRecorder(stream);
-            mediaRecorderRef.current = mediaRecorder;
-            audioChunksRef.current = [];
-
-            mediaRecorder.ondataavailable = (event) => {
-                audioChunksRef.current.push(event.data);
-            };
-
-            mediaRecorder.onstop = async () => {
-                const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
-                const reader = new FileReader();
-                reader.readAsDataURL(audioBlob);
-                reader.onloadend = async () => {
-                    const base64Audio = (reader.result as string).split(',')[1];
-                    setRecordingMode('evaluate');
-                    try {
-                        const feedback = await evaluatePronunciation(base64Audio, 'audio/wav', text, language);
-                        setEvaluationResult({ text, feedback });
-                        // Save attempt
-                        const scoreMatch = feedback.match(/\*\*Score\*\*:\s*(\d+)/i);
-                        const score = scoreMatch ? parseInt(scoreMatch[1]) : 0;
-                        await savePronunciationAttempt({
-                            word: text,
-                            heard: '...',
-                            pinyin: '',
-                            score: score,
-                            feedback: feedback,
-                            timestamp: Date.now()
-                        });
-                    } catch (e) {
-                        showGeneralError(e);
-                    }
-                };
-                stream.getTracks().forEach(track => track.stop());
-            };
-
-            mediaRecorder.start();
-            setActiveWordRecording(text);
-            recordingTargetRef.current = text;
-        } catch (e) {
-            showGeneralError("Microphone access denied");
-        }
+  const handleClearHistory = async () => {
+    if (confirm("Are you sure you want to clear the chat history?")) {
+        setMessages([]);
+        await clearChatHistory();
     }
   };
 
-  const playAudio = async (text: string) => {
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setSelectedImage(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const startRecording = async (mode: 'transcribe' | 'evaluate', referenceText?: string) => {
     try {
-        // Use the centralized helper that handles fallback and caching
-        await playTextToSpeech(text);
-    } catch(e) {
-        // If even the browser fallback fails
-        showGeneralError(e);
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      recordingTargetRef.current = referenceText || null;
+      
+      let mimeType = 'audio/webm';
+      if (MediaRecorder.isTypeSupported('audio/webm')) {
+        mimeType = 'audio/webm';
+      } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+        mimeType = 'audio/mp4';
+      } else if (MediaRecorder.isTypeSupported('audio/wav')) {
+        mimeType = 'audio/wav';
+      }
+
+      const recorder = new MediaRecorder(stream, { mimeType });
+      mediaRecorderRef.current = recorder;
+      audioChunksRef.current = [];
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+
+      recorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
+        const reader = new FileReader();
+        reader.onloadend = async () => {
+          const base64 = (reader.result as string).split(',')[1];
+          setIsLoading(true);
+          try {
+            if (mode === 'transcribe') {
+               const transcription = await transcribeAudio(base64, mimeType);
+               setInput(prev => (prev ? prev + " " : "") + transcription);
+            } else if (mode === 'evaluate') {
+               const target = recordingTargetRef.current || input;
+               
+               if (!recordingTargetRef.current) {
+                   const audioMsg: ChatMessage = {
+                      id: Date.now().toString(),
+                      role: 'user',
+                      text: `🎤 *Pronunciation Check*${target ? ` for: "**${target}**"` : ""}`
+                   };
+                   setMessages(prev => [...prev, audioMsg]);
+                   saveChatMessage(audioMsg);
+               }
+               
+               const feedback = await evaluatePronunciation(base64, mimeType, target, language);
+               
+               // Parse the feedback to extract score and pinyin for saving history
+               const scoreMatch = feedback.match(/\*\*Score\*\*:\s*(\d+)/);
+               const heardMatch = feedback.match(/\*\*Heard\*\*:\s*(.*)/);
+               const pinyinMatch = feedback.match(/\*\*Pinyin\*\*:\s*(.*)/);
+
+               if (recordingTargetRef.current) {
+                  setEvaluationResult({ text: recordingTargetRef.current, feedback });
+                  
+                  // Save attempt history
+                  await savePronunciationAttempt({
+                     word: recordingTargetRef.current,
+                     heard: heardMatch ? heardMatch[1].trim() : "",
+                     pinyin: pinyinMatch ? pinyinMatch[1].trim() : "",
+                     score: scoreMatch ? parseInt(scoreMatch[1]) : 0,
+                     feedback: feedback,
+                     timestamp: Date.now()
+                  });
+               } else {
+                  const feedbackMsg: ChatMessage = {
+                      id: (Date.now() + 1).toString(),
+                      role: 'model',
+                      text: feedback
+                   };
+                   setMessages(prev => [...prev, feedbackMsg]);
+                   saveChatMessage(feedbackMsg);
+               }
+            }
+          } catch (e) {
+            console.error(e);
+            showGeneralError(e);
+          } finally {
+            setIsLoading(false);
+            setRecordingMode('none');
+            setActiveWordRecording(null);
+            recordingTargetRef.current = null;
+          }
+        };
+        reader.readAsDataURL(audioBlob);
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      recorder.start();
+      setRecordingMode(mode);
+    } catch (e: any) {
+      console.error(e);
+      showGeneralError(e);
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop();
+    }
+  };
+
+  const handleWordRecord = (text: string) => {
+    if (activeWordRecording === text) {
+      stopRecording();
+    } else {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+          stopRecording(); 
+      }
+      setActiveWordRecording(text);
+      startRecording('evaluate', text);
+    }
+  };
+
+  const playWordAudio = async (text: string) => {
+    try {
+      if (audioCache.current[text]) {
+        try {
+            await playRawAudio(audioCache.current[text]);
+            return;
+        } catch (e) {
+            console.warn("Cached word audio corrupted, regenerating...");
+            delete audioCache.current[text];
+        }
+      }
+      try {
+        const buffer = await generateSpeech(text);
+        audioCache.current[text] = buffer;
+        await playRawAudio(buffer);
+      } catch (geminiError) {
+        console.warn("Gemini TTS failed, using browser fallback", geminiError);
+        speakBrowser(text);
+      }
+    } catch (err) {
+      console.error("Word TTS Error:", err);
+      speakBrowser(text);
+    }
+  };
+
+  const handleAudioPlay = async (text: string, msgId: string) => {
+    // If this specific message is already processing/playing, ignore click
+    if (playingMsgId === msgId) return;
+    
+    // Stop any currently playing audio immediately
+    stopTtsAudio();
+    setPlayingMsgId(msgId);
+    
+    try {
+      const currentMsg = messages.find(m => m.id === msgId);
+
+      // 1. Check RAM Cache (Fastest)
+      if (audioCache.current[text]) {
+         try {
+             await playRawAudio(audioCache.current[text]);
+             
+             // Backfill DB if needed
+             if (!currentMsg?.audio) {
+                 const base64 = arrayBufferToBase64(audioCache.current[text]);
+                 setMessages(prev => prev.map(m => m.id === msgId ? { ...m, audio: base64 } : m));
+                 updateMessageAudio(msgId, base64).catch(e => {});
+             }
+             return; 
+         } catch (e) {
+             delete audioCache.current[text];
+         }
+      }
+
+      // 2. Check DB/State Message Audio (Base64)
+      if (currentMsg?.audio) {
+         try {
+             const bytes = base64ToUint8Array(currentMsg.audio);
+             audioCache.current[text] = bytes.buffer.slice(0); // Cache for next time
+             await playRawAudio(bytes.buffer);
+             return;
+         } catch (e) {
+             console.warn("DB Audio corrupted");
+         }
+      }
+
+      // 3. Generate New Audio
+      try {
+         const buffer = await generateSpeech(text);
+         audioCache.current[text] = buffer;
+         await playRawAudio(buffer);
+         
+         // Persist
+         const base64 = arrayBufferToBase64(buffer);
+         setMessages(prev => prev.map(m => m.id === msgId ? { ...m, audio: base64 } : m));
+         updateMessageAudio(msgId, base64).catch(e => console.error("Audio save failed", e));
+      } catch (geminiError) {
+         console.warn("Gemini TTS failed, using browser fallback", geminiError);
+         speakBrowser(text);
+      }
+    } catch (e: any) {
+      console.error("Playback failed completely", e);
+      speakBrowser(text);
+    } finally {
+      // Only clear if we are still the active message
+      setPlayingMsgId(prev => prev === msgId ? null : prev);
     }
   };
 
   const showWordHistory = async (word: string) => {
       setHistoryWord(word);
       setHistoryLoading(true);
-      const data = await getPronunciationHistory(word);
-      setHistoryData(data);
-      setHistoryLoading(false);
+      try {
+          const data = await getPronunciationHistory(word);
+          setHistoryData(data);
+      } catch (e) {
+          console.error(e);
+          showGeneralError("Failed to fetch history");
+      } finally {
+          setHistoryLoading(false);
+      }
+  };
+
+  const contextValue: TutorContextType = {
+      activeWordRecording,
+      handleWordRecord,
+      audioCache: audioCache.current,
+      playAudio: playWordAudio,
+      evaluationResult,
+      setEvaluationResult,
+      showWordHistory
   };
 
   return (
-    <TutorContext.Provider value={{
-        activeWordRecording,
-        handleWordRecord,
-        playAudio,
-        evaluationResult,
-        setEvaluationResult,
-        showWordHistory,
-        activeWordId,
-        setActiveWordId
-    }}>
-      <div className="flex flex-col h-full relative bg-gray-50">
-        
-        {/* Error Banner */}
-        {generalError && (
-            <div className="absolute top-4 left-4 right-4 z-50 bg-red-500 text-white px-4 py-3 rounded-lg shadow-lg flex items-center justify-between animate-fade-in">
-                <span className="flex items-center"><AlertCircle className="mr-2" size={18} /> {generalError}</span>
-                <button onClick={() => setGeneralError(null)}><X size={18} /></button>
-            </div>
+    <TutorContext.Provider value={contextValue}>
+    <div className="flex flex-col h-full bg-gray-50 relative">
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {messages.length === 0 && (
+          <div className="text-center text-gray-500 mt-20">
+            <h2 className="text-2xl font-bold mb-2">{t.welcome}</h2>
+            <p>{t.start}</p>
+            <p className="text-sm mt-2">{t.desc}</p>
+          </div>
         )}
-
-        {/* Chat Area */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6">
-            {messages.length === 0 && (
-                <div className="flex flex-col items-center justify-center h-full text-gray-400 space-y-4">
-                    <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-sm">
-                        <BrainCircuit size={32} className="text-gray-300" />
-                    </div>
-                    <p className="text-center max-w-xs">{t.start}</p>
+        {messages.map((msg) => (
+          <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+            <div className={`max-w-[85%] p-4 rounded-2xl ${
+              msg.role === 'user' ? 'bg-red-600 text-white rounded-br-none' : 'bg-white shadow-sm rounded-bl-none border border-gray-100'
+            }`}>
+              {msg.image && (
+                <img src={msg.image} alt="User upload" className="max-w-full h-auto rounded mb-2 max-h-48 object-cover" />
+              )}
+              <div className={`prose ${msg.role === 'user' ? 'prose-invert' : 'text-gray-800'} max-w-none`}>
+                <ReactMarkdown components={markdownComponents}>
+                  {msg.text}
+                </ReactMarkdown>
+              </div>
+              
+              {msg.role === 'model' && (
+                <div className="flex items-center space-x-2 mt-2 flex-wrap">
+                  <button 
+                    onClick={() => handleAudioPlay(msg.text, msg.id)}
+                    className={`p-1.5 rounded-full transition-colors flex items-center ${
+                      playingMsgId === msg.id 
+                        ? 'bg-red-100 text-red-600 cursor-wait' 
+                        : 'bg-gray-50 hover:bg-gray-100 text-gray-600 border border-gray-200'
+                    }`}
+                  >
+                    {playingMsgId === msg.id ? (
+                      <RefreshCw size={16} className="animate-spin" />
+                    ) : (
+                      <Volume2 size={16} />
+                    )}
+                  </button>
                 </div>
-            )}
-
-            {messages.map((msg) => (
-                <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-[90%] md:max-w-[80%] rounded-2xl p-5 shadow-sm relative ${
-                        msg.role === 'user' 
-                        ? 'bg-gray-900 text-white rounded-tr-none' 
-                        : 'bg-white text-gray-800 border border-gray-100 rounded-tl-none'
-                    }`}>
-                        {msg.image && (
-                            <img src={msg.image} alt="User upload" className="max-w-full h-auto rounded-lg mb-3" />
-                        )}
-                        
-                        {msg.role === 'user' ? (
-                            <p className="whitespace-pre-wrap">{msg.text}</p>
-                        ) : (
-                            <div className="prose prose-red max-w-none">
-                                <ReactMarkdown components={markdownComponents}>
-                                    {msg.text}
-                                </ReactMarkdown>
-                                {msg.groundingUrls && msg.groundingUrls.length > 0 && (
-                                    <div className="mt-4 pt-4 border-t border-gray-100 text-xs">
-                                        <p className="font-bold text-gray-500 mb-2">{t.sources}</p>
-                                        <div className="flex flex-wrap gap-2">
-                                            {msg.groundingUrls.map((url, i) => (
-                                                <a 
-                                                    key={i} 
-                                                    href={url.uri} 
-                                                    target="_blank" 
-                                                    rel="noopener noreferrer"
-                                                    className="bg-gray-50 text-blue-600 px-2 py-1 rounded border border-gray-200 hover:bg-blue-50 truncate max-w-[200px]"
-                                                >
-                                                    {url.title}
-                                                </a>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-                    </div>
-                </div>
-            ))}
-            
-            {isLoading && (
-                <div className="flex justify-start">
-                    <div className="bg-white rounded-2xl p-4 border border-gray-100 rounded-tl-none flex items-center space-x-2">
-                        <div className="w-2 h-2 bg-red-400 rounded-full animate-bounce"></div>
-                        <div className="w-2 h-2 bg-red-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-                        <div className="w-2 h-2 bg-red-400 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></div>
-                    </div>
-                </div>
-            )}
-            <div ref={messagesEndRef} />
-        </div>
-
-        {/* Input Area */}
-        <div className="p-4 bg-white border-t border-gray-200 shrink-0">
-            <div className="max-w-4xl mx-auto">
-                {selectedImage && (
-                    <div className="mb-3 relative inline-block">
-                        <img src={selectedImage} alt="Preview" className="h-16 w-16 object-cover rounded-lg border border-gray-200" />
-                        <button 
-                           onClick={() => setSelectedImage(null)}
-                           className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-0.5 hover:bg-red-600"
-                        >
-                            <X size={12} />
-                        </button>
-                    </div>
-                )}
-                
-                <div className="flex items-center space-x-2 mb-3 overflow-x-auto pb-1">
-                     <button
-                        onClick={() => setUseSearch(!useSearch)}
-                        className={`flex items-center px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${useSearch ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100'}`}
-                     >
-                        <Search size={12} className="mr-1.5" />
-                        {t.search}
-                     </button>
-                     <button
-                        onClick={() => setUseThinking(!useThinking)}
-                        className={`flex items-center px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${useThinking ? 'bg-purple-50 border-purple-200 text-purple-700' : 'bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100'}`}
-                     >
-                        <BrainCircuit size={12} className="mr-1.5" />
-                        {t.thinking}
-                     </button>
-                     <div className="w-px h-4 bg-gray-300 mx-2"></div>
-                     <button 
-                        onClick={handleClearHistory}
-                        className="text-gray-400 hover:text-red-500 text-xs font-bold flex items-center"
-                     >
-                        <Trash2 size={12} className="mr-1" />
-                        {t.clearChat}
-                     </button>
-                </div>
-
-                <div className="flex items-end space-x-2">
-                    <button 
-                        onClick={() => fileInputRef.current?.click()}
-                        className="p-3 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-xl transition-colors"
-                    >
-                        <ImageIcon size={20} />
-                    </button>
-                    <input 
-                        type="file" 
-                        ref={fileInputRef} 
-                        className="hidden" 
-                        accept="image/*" 
-                        onChange={handleImageSelect}
-                    />
-                    
-                    <div className="flex-1 relative">
-                        <textarea
-                            value={input}
-                            onChange={(e) => setInput(e.target.value)}
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter' && !e.shiftKey) {
-                                    e.preventDefault();
-                                    handleSend();
-                                }
-                            }}
-                            placeholder={t.placeholder}
-                            rows={1}
-                            className="w-full bg-gray-100 text-gray-900 rounded-xl px-4 py-3 pr-10 focus:outline-none focus:ring-2 focus:ring-red-500 focus:bg-white transition-all resize-none max-h-32"
-                            style={{ minHeight: '48px' }}
-                        />
-                    </div>
-
-                    <button 
-                        onClick={handleSend}
-                        disabled={(!input.trim() && !selectedImage) || isLoading}
-                        className={`p-3 rounded-xl font-bold transition-all shadow-md ${
-                            (!input.trim() && !selectedImage) || isLoading 
-                            ? 'bg-gray-200 text-gray-400 cursor-not-allowed' 
-                            : 'bg-red-600 text-white hover:bg-red-700 active:scale-95'
-                        }`}
-                    >
-                        <Send size={20} />
-                    </button>
-                </div>
+              )}
             </div>
-        </div>
-
-        {/* History Modal */}
-        {historyWord && (
-            <div className="fixed inset-0 z-[70] bg-black bg-opacity-50 flex items-center justify-center p-4" onClick={() => setHistoryWord(null)}>
-                <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
-                    <div className="p-4 border-b border-gray-100 flex justify-between items-center">
-                        <h3 className="font-bold text-lg">History: {historyWord}</h3>
-                        <button onClick={() => setHistoryWord(null)} className="p-1 hover:bg-gray-100 rounded-full"><X size={20} /></button>
-                    </div>
-                    <div className="p-4 overflow-y-auto flex-1">
-                        {historyLoading ? (
-                            <div className="flex justify-center p-4"><RefreshCw className="animate-spin text-gray-400" /></div>
-                        ) : historyData.length === 0 ? (
-                            <p className="text-center text-gray-500 py-4">No practice history yet.</p>
-                        ) : (
-                            <div className="space-y-3">
-                                {historyData.map((attempt, i) => (
-                                    <div key={i} className="border border-gray-100 rounded-xl p-3 bg-gray-50">
-                                        <div className="flex justify-between items-center mb-1">
-                                            <span className={`font-bold ${attempt.score >= 8 ? 'text-green-600' : attempt.score >= 5 ? 'text-orange-500' : 'text-red-500'}`}>
-                                                Score: {attempt.score}/10
-                                            </span>
-                                            <span className="text-xs text-gray-400 flex items-center">
-                                                <Calendar size={10} className="mr-1" />
-                                                {new Date(attempt.timestamp).toLocaleDateString()}
-                                            </span>
-                                        </div>
-                                        <div className="text-xs text-gray-600 mt-2 line-clamp-3">
-                                            {attempt.feedback}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                </div>
-            </div>
+          </div>
+        ))}
+        {isLoading && (
+          <div className="flex justify-start">
+             <div className="bg-white p-4 rounded-2xl rounded-bl-none shadow-sm flex items-center space-x-2">
+                <div className="w-2 h-2 bg-red-400 rounded-full animate-bounce" style={{ animationDelay: '0s' }}></div>
+                <div className="w-2 h-2 bg-red-500 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                <div className="w-2 h-2 bg-red-600 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></div>
+             </div>
+          </div>
         )}
+        <div ref={messagesEndRef} />
       </div>
+
+      {/* History Modal */}
+      {historyWord && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
+              <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg flex flex-col max-h-[80vh] overflow-hidden">
+                  <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+                      <div>
+                          <h3 className="text-2xl font-bold text-gray-900 flex items-center">
+                              <History className="mr-2 text-blue-500" size={24} />
+                              {historyWord}
+                          </h3>
+                          <p className="text-sm text-gray-500">Pronunciation Improvement Tracking</p>
+                      </div>
+                      <button onClick={() => setHistoryWord(null)} className="p-2 hover:bg-gray-200 rounded-full transition-colors">
+                          <X size={24} className="text-gray-400" />
+                      </button>
+                  </div>
+                  
+                  <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                      {historyLoading ? (
+                          <div className="flex items-center justify-center py-12">
+                              <RefreshCw className="animate-spin text-blue-500" size={32} />
+                          </div>
+                      ) : historyData.length === 0 ? (
+                          <div className="text-center py-12 text-gray-400">
+                              <Ear className="mx-auto mb-4 opacity-20" size={64} />
+                              <p>No attempts recorded yet for this word.</p>
+                          </div>
+                      ) : (
+                          historyData.map((attempt, i) => (
+                              <div key={i} className="bg-white border border-gray-100 rounded-2xl p-4 shadow-sm hover:shadow-md transition-shadow">
+                                  <div className="flex justify-between items-start mb-3">
+                                      <div className="flex items-center text-xs font-bold text-gray-400 uppercase tracking-wider">
+                                          <Calendar size={14} className="mr-1" />
+                                          {new Date(attempt.timestamp).toLocaleDateString()}
+                                      </div>
+                                      <div className={`px-2 py-1 rounded text-xs font-bold ${attempt.score >= 8 ? 'bg-green-100 text-green-700' : attempt.score >= 5 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>
+                                          Score: {attempt.score}/10
+                                      </div>
+                                  </div>
+                                  <div className="flex items-baseline space-x-2 mb-2">
+                                      <span className="text-lg font-bold text-gray-800">{attempt.heard}</span>
+                                      <span className="text-sm text-blue-600 font-medium">{attempt.pinyin}</span>
+                                  </div>
+                                  <div className="text-sm text-gray-600 border-t border-gray-50 pt-2 prose prose-sm max-w-none">
+                                      <ReactMarkdown>{attempt.feedback}</ReactMarkdown>
+                                  </div>
+                              </div>
+                          ))
+                      )}
+                  </div>
+                  
+                  <div className="p-4 bg-gray-50 border-t border-gray-100 text-center">
+                      <button 
+                        onClick={() => { setHistoryWord(null); handleWordRecord(historyWord); }}
+                        className="bg-red-600 text-white font-bold px-6 py-2 rounded-xl hover:bg-red-700 transition-colors shadow-md flex items-center justify-center mx-auto"
+                      >
+                          <Mic size={18} className="mr-2" />
+                          Practice Again
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      <div className="bg-white p-4 border-t border-gray-200 relative">
+        {generalError && (
+           <div className="absolute bottom-full left-0 w-full p-2 bg-transparent pointer-events-none flex justify-center">
+              <div className="bg-gray-800 text-white px-4 py-2 rounded-full shadow-lg flex items-center animate-fade-in text-sm pointer-events-auto">
+                 <AlertCircle size={16} className="mr-2 text-red-400" />
+                 {generalError}
+              </div>
+           </div>
+        )}
+
+        <div className="flex items-center space-x-2">
+          <button 
+            onClick={() => fileInputRef.current?.click()}
+            className="p-2 text-gray-500 hover:bg-gray-100 rounded-full"
+            title="Upload Image"
+          >
+            <ImageIcon size={20} />
+          </button>
+          <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageSelect} />
+          
+          <button
+             onMouseDown={() => startRecording('transcribe')}
+             onMouseUp={stopRecording}
+             className={`p-2 rounded-full ${recordingMode === 'transcribe' ? 'bg-red-100 text-red-600 animate-pulse' : 'text-gray-500 hover:bg-gray-100'}`}
+          >
+            <Mic size={20} />
+          </button>
+
+          <input
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+            placeholder={t.placeholder}
+            className="flex-1 border border-gray-300 rounded-full px-4 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
+          />
+          <button 
+            onClick={handleSend}
+            disabled={(!input.trim() && !selectedImage) || isLoading}
+            className={`p-2 rounded-full ${(!input.trim() && !selectedImage) || isLoading ? 'bg-gray-200 text-gray-400' : 'bg-red-600 text-white hover:bg-red-700'}`}
+          >
+            <Send size={20} />
+          </button>
+        </div>
+      </div>
+    </div>
     </TutorContext.Provider>
   );
 };

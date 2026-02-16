@@ -319,8 +319,6 @@ export async function generateVocabularyBatch(level: HSKLevel, lang: AppLanguage
 
 let ttsAudioContext: AudioContext | null = null;
 let currentTtsSource: AudioBufferSourceNode | null = null;
-// Module-level cache for generated audio to save bandwidth/quota across components
-const globalAudioCache = new Map<string, ArrayBuffer>();
 
 export function stopTtsAudio() {
   if (currentTtsSource) {
@@ -340,22 +338,19 @@ export async function generateSpeech(text: string): Promise<ArrayBuffer> {
       throw new Error("Text is empty");
   }
 
-  // Improved cleaning
+  // Improved cleaning to reduce safety trigger false positives
   const cleanText = text
-      .replace(/https?:\/\/\S+/g, '')
-      .replace(/[*_`#\[\]()]/g, '')
+      .replace(/https?:\/\/\S+/g, '') // Remove URLs
+      .replace(/[*_`#\[\]()]/g, '')   // Remove Markdown chars
+      // Keep CJK characters, basic Latin, digits, and standard punctuation. 
+      // Remove others to avoid weird symbols triggering safety.
       .replace(/[^\w\s\u4e00-\u9fa5.,?!:;'"-]/g, '') 
       .replace(/\s+/g, ' ')
       .trim()
       .substring(0, 300);
 
   if (!cleanText) {
-     throw new Error("Text contains only symbols or unsupported characters.");
-  }
-
-  // Check Cache
-  if (globalAudioCache.has(cleanText)) {
-      return globalAudioCache.get(cleanText)!.slice(0); // Return copy
+     throw new Error("Text contains only symbols or unsupported characters, cannot generate speech.");
   }
 
   const generateWithConfig = async (voiceName: string) => {
@@ -370,6 +365,7 @@ export async function generateSpeech(text: string): Promise<ArrayBuffer> {
               prebuiltVoiceConfig: { voiceName } 
             } 
           },
+          // Relax safety settings for TTS to prevent false positives on educational content
           safetySettings: [
             { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
             { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
@@ -397,6 +393,7 @@ export async function generateSpeech(text: string): Promise<ArrayBuffer> {
     
     if (candidate.finishReason !== 'STOP' && candidate.finishReason !== undefined) { 
          if (candidate.finishReason === 'OTHER' || candidate.finishReason === 'SAFETY') {
+             console.warn("TTS Blocked/Failed with reason:", candidate.finishReason);
              throw new Error("Speech generation blocked by safety or content filters.");
          }
     }
@@ -412,14 +409,13 @@ export async function generateSpeech(text: string): Promise<ArrayBuffer> {
     for (let i = 0; i < len; i++) {
       bytes[i] = binaryString.charCodeAt(i);
     }
-    
-    // Cache result
-    globalAudioCache.set(cleanText, bytes.buffer.slice(0));
-
     return bytes.buffer;
   } catch (error: any) {
     if (error.message?.includes('429') || error.status === 429) {
-         throw new Error("TTS Quota Exceeded.");
+         throw new Error("TTS Quota Exceeded. Please try again later.");
+    }
+    if (error.message?.includes('supported by the AudioOut model')) {
+         throw new Error("Text contains characters not supported by speech generation.");
     }
     console.error("TTS Execution Error:", error);
     throw error;
@@ -427,7 +423,7 @@ export async function generateSpeech(text: string): Promise<ArrayBuffer> {
 }
 
 export async function playRawAudio(buffer: ArrayBuffer): Promise<void> {
-  stopTtsAudio();
+  stopTtsAudio(); // Stop any currently playing TTS
 
   if (!ttsAudioContext || ttsAudioContext.state === 'closed') {
       ttsAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({sampleRate: 24000});
@@ -450,36 +446,24 @@ export async function playRawAudio(buffer: ArrayBuffer): Promise<void> {
   source.buffer = audioBuffer;
   source.connect(ctx.destination);
   
+  // Track current source
   currentTtsSource = source;
-  source.start(0);
+  source.onended = () => {
+    if (currentTtsSource === source) {
+      currentTtsSource = null;
+    }
+  };
 
-  // Return a promise that resolves when audio finishes
-  return new Promise((resolve) => {
-    source.onended = () => {
-        if (currentTtsSource === source) {
-            currentTtsSource = null;
-        }
-        resolve();
-    };
-  });
+  source.start(0);
 }
 
-export async function speakBrowser(text: string, lang: string = 'zh-CN'): Promise<void> {
-  return new Promise((resolve) => {
-      stopTtsAudio();
-      if ('speechSynthesis' in window) {
-        const u = new SpeechSynthesisUtterance(text);
-        u.lang = lang;
-        u.onend = () => resolve();
-        u.onerror = (e) => {
-            console.warn("Browser TTS error", e);
-            resolve();
-        }
-        window.speechSynthesis.speak(u);
-      } else {
-        resolve();
-      }
-  });
+export function speakBrowser(text: string, lang: string = 'zh-CN') {
+  stopTtsAudio(); // Stop any currently playing TTS
+  if ('speechSynthesis' in window) {
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = lang;
+    window.speechSynthesis.speak(u);
+  }
 }
 
 export async function playTextToSpeech(text: string): Promise<void> {
@@ -489,7 +473,7 @@ export async function playTextToSpeech(text: string): Promise<void> {
     await playRawAudio(pcmBuffer);
   } catch (e) {
     console.warn("Gemini TTS failed, falling back to browser TTS", e);
-    await speakBrowser(text);
+    speakBrowser(text);
   }
 }
 

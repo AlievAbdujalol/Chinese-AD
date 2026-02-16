@@ -1,8 +1,7 @@
-import firebase from 'firebase/compat/app';
-import 'firebase/compat/auth';
-import 'firebase/compat/firestore';
+import { initializeApp } from 'firebase/app';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut as firebaseSignOut } from 'firebase/auth';
+import { getFirestore } from 'firebase/firestore';
 
-// Configuration from Firebase Console
 const firebaseConfig = {
   apiKey: "AIzaSyA6a-dg6TuGIiYgIX9HNBzFOuGUya8yy8c",
   authDomain: "chinese-ad-7e96a.firebaseapp.com",
@@ -14,44 +13,33 @@ const firebaseConfig = {
   measurementId: "G-BY2WM564FR"
 };
 
-// Initialize Firebase
-let app;
-if (!firebase.apps.length) {
-  try {
-    app = firebase.initializeApp(firebaseConfig);
-  } catch (e) {
-    console.warn("Firebase initialization error:", e);
-  }
-} else {
-  app = firebase.app();
-}
+const app = initializeApp(firebaseConfig);
 
-// Export services used by the app
-export const auth = firebase.auth();
-export const db = firebase.firestore();
-export const googleProvider = new firebase.auth.GoogleAuthProvider();
+export const auth = getAuth(app);
+export const db = getFirestore(app);
+export const googleProvider = new GoogleAuthProvider();
 
 // Force account selection to allow users to switch accounts
 googleProvider.setCustomParameters({
   prompt: 'select_account'
 });
 
-// Auth Helpers
 export const loginEmailPassword = async (email: string, pass: string) => {
-  return await auth.signInWithEmailAndPassword(email, pass);
+  return await signInWithEmailAndPassword(auth, email, pass);
 };
 
 export const registerEmailPassword = async (email: string, pass: string) => {
-  return await auth.createUserWithEmailAndPassword(email, pass);
+  return await createUserWithEmailAndPassword(auth, email, pass);
 };
 
 export const signInWithGoogle = async () => {
-  return await auth.signInWithPopup(googleProvider);
+  // We propagate the error so the UI can show specific messages (like unauthorized domain)
+  return await signInWithPopup(auth, googleProvider);
 };
 
 export const logout = async () => {
   try {
-    await auth.signOut();
+    await firebaseSignOut(auth);
   } catch (error) {
     console.error("Error signing out", error);
   }
