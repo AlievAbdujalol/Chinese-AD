@@ -17,13 +17,14 @@ const firebaseConfig = {
 };
 
 // Initialize Firebase
-// Check if already initialized to prevent errors in some environments
+// Ensure we don't initialize twice, which can crash HMR or re-renders
 if (!firebase.apps.length) {
   firebase.initializeApp(firebaseConfig);
 }
+
 const app = firebase.app();
 
-// Initialize Analytics conditionally
+// Initialize Analytics conditionally (only in browser environment)
 let analytics;
 if (typeof window !== 'undefined') {
   try {
@@ -38,18 +39,17 @@ export const auth = app.auth();
 export const db = app.firestore();
 export const googleProvider = new firebase.auth.GoogleAuthProvider();
 
-// Enable Persistence
-// Using Compat method to match the initialized app.firestore() instance
-try {
+// Enable Persistence safely
+if (typeof window !== 'undefined') {
   db.enablePersistence({ synchronizeTabs: true }).catch((err) => {
     if (err.code === 'failed-precondition') {
+       // Multiple tabs open, persistence can only be enabled in one tab at a time.
        console.warn('Firestore persistence failed: Multiple tabs open');
     } else if (err.code === 'unimplemented') {
+       // The current browser does not support all of the features required to enable persistence
        console.warn('Firestore persistence not supported by browser');
     }
   });
-} catch (err) {
-  console.debug("Firestore persistence configuration error:", err);
 }
 
 // Auth Helpers
