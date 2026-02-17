@@ -18,7 +18,6 @@ export function getFriendlyErrorMessage(error: any): string {
   const name = error?.name || '';
   
   // Microphone / Device Permissions (Check this first)
-  // "Permission denied" often comes from getUserMedia in browsers like Firefox/Safari
   if (name === 'NotAllowedError' || 
       name === 'PermissionDeniedError' || 
       msg.toLowerCase().includes('microphone') || 
@@ -80,7 +79,6 @@ async function retryOperation<T>(operation: () => Promise<T>): Promise<T> {
       
       // Stop retrying if the model explicitly says it tried to generate text (Hallucination/Misuse error)
       if ((msg.includes('Model tried to generate text') && msg.includes('TTS')) || msg.includes('INVALID_ARGUMENT')) {
-         // Log as debug to avoid console noise, as this is a known API behavior we handle via fallback
          console.debug("TTS Model Hallucination/Invalid Arg (Non-retriable):", msg);
          throw error;
       }
@@ -137,7 +135,7 @@ export function arrayBufferToBase64(buffer: ArrayBuffer): string {
 }
 
 
-// --- Text & Vision --- (Unchanged)
+// --- Text & Vision ---
 export async function generateTutorResponse(
   history: { role: string; parts: any[] }[],
   message: string,
@@ -390,12 +388,9 @@ export async function generateSpeech(text: string): Promise<ArrayBuffer> {
       throw new Error("Text is empty");
   }
 
-  // Improved cleaning regex:
-  // - Includes CJK Unified Ideographs (\u4e00-\u9fa5)
-  // - Includes Cyrillic (\u0400-\u04FF) for Russian/Tajik
-  // - Includes Latin Extended (\u00C0-\u024F) and basic Latin for Pinyin with tones
-  // - Includes standard punctuation and digits
-  // - Updated to support 4000 characters for full tutor explanations
+  // Improved cleaning regex to preserve sentence structure
+  // Preserves: CJK, Cyrillic, Latin Ext, Standard Punctuation, Parentheses, Dashes
+  // Limit: 4000 chars for long tutor responses
   const cleanText = text
       .replace(/https?:\/\/\S+/g, '') // Remove URLs
       .replace(/[*_`#\[\]]/g, '')     // Remove Markdown chars (keep parens)
@@ -442,7 +437,6 @@ export async function generateSpeech(text: string): Promise<ArrayBuffer> {
     try {
         response = await generateWithConfig('Kore');
     } catch (err: any) {
-        // If it's a 400 invalid argument or model confusion error, do not retry with another voice, just fail to fallback
         if (err.message && (err.message.includes("Model tried to generate text") || err.message.includes("INVALID_ARGUMENT"))) {
            throw err;
         }
@@ -475,8 +469,6 @@ export async function generateSpeech(text: string): Promise<ArrayBuffer> {
     }
     return bytes.buffer;
   } catch (error: any) {
-    // Pass through detailed errors for the UI to handle fallback
-    // We log here only if it's NOT the expected hallucination error (to keep console clean)
     if (!error.message?.includes("Model tried to generate text")) {
         console.error("TTS Execution Error:", error);
     }

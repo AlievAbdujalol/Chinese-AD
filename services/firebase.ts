@@ -3,7 +3,6 @@ import firebase from "firebase/compat/app";
 import "firebase/compat/auth";
 import "firebase/compat/firestore";
 import "firebase/compat/analytics";
-import { persistentLocalCache, persistentMultipleTabManager } from "firebase/firestore";
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
@@ -40,19 +39,16 @@ export const db = app.firestore();
 export const googleProvider = new firebase.auth.GoogleAuthProvider();
 
 // Enable Persistence
-// Replaces deprecated db.enablePersistence() with new cache settings
+// Using Compat method to match the initialized app.firestore() instance
 try {
-  db.settings({
-    // @ts-ignore: Fix for type mismatch in compat mode while using modular cache types
-    // Add merge: true to prevent "overriding original host" warning
-    merge: true,
-    // @ts-ignore
-    localCache: persistentLocalCache({
-      tabManager: persistentMultipleTabManager()
-    })
+  db.enablePersistence({ synchronizeTabs: true }).catch((err) => {
+    if (err.code === 'failed-precondition') {
+       console.warn('Firestore persistence failed: Multiple tabs open');
+    } else if (err.code === 'unimplemented') {
+       console.warn('Firestore persistence not supported by browser');
+    }
   });
 } catch (err) {
-  // If persistence fails (e.g. browser not supported or multiple tabs issue handled internally by tabManager), log it
   console.debug("Firestore persistence configuration error:", err);
 }
 
