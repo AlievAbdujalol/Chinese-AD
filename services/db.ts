@@ -1,7 +1,7 @@
+
 import { openDB, DBSchema, IDBPDatabase } from 'idb';
 import { HSKLevel, VocabCard, ChatMessage, AppLanguage, PronunciationAttempt, UserGoals, DailyProgress } from '../types';
-import { auth, db } from './firebase'; // Import Firebase
-import { collection, addDoc, query, where, getDocs, orderBy, limit, doc, setDoc, deleteDoc, getDoc, QuerySnapshot, DocumentData } from 'firebase/firestore';
+import { auth, db } from './firebase'; 
 
 interface HSKTutorDB extends DBSchema {
   results: {
@@ -23,6 +23,7 @@ interface HSKTutorDB extends DBSchema {
       pinyin: string;
       translation: string;
       exampleSentence: string;
+      examplePinyin?: string;
       exampleTranslation: string;
       level: HSKLevel;
       rating?: 'hard' | 'good' | 'easy';
@@ -45,15 +46,24 @@ interface HSKTutorDB extends DBSchema {
   };
   user_goals: {
     key: string; // 'goals'
-    value: UserGoals;
+    value: { key: string; value: UserGoals };
+  };
+  global_audio: {
+    key: string; // text hash or cleaned text
+    value: {
+      text: string;
+      audio: string; // base64
+      timestamp: number;
+    };
   };
 }
 
 let dbPromise: Promise<IDBPDatabase<HSKTutorDB>>;
+let cloudDisabled = false; // Circuit breaker for permissions
 
 export const initDB = () => {
   if (!dbPromise) {
-    dbPromise = openDB<HSKTutorDB>('hsk-tutor-db', 3, {
+    dbPromise = openDB<HSKTutorDB>('hsk-tutor-db', 4, {
       upgrade(db, oldVersion) {
         if (oldVersion < 1) {
           const resultStore = db.createObjectStore('results', { keyPath: 'id', autoIncrement: true });
@@ -68,6 +78,9 @@ export const initDB = () => {
         if (oldVersion < 3) {
           db.createObjectStore('daily_stats', { keyPath: 'date' });
           db.createObjectStore('user_goals', { keyPath: 'key' }); // dummy key 'goals'
+        }
+        if (oldVersion < 4) {
+          db.createObjectStore('global_audio', { keyPath: 'text' });
         }
       },
     });
@@ -96,6 +109,20 @@ const withTimeout = <T>(promise: Promise<T>, ms: number = 2000): Promise<T> => {
     });
 };
 
+// --- Helper: Cloud Error Logging ---
+const handleCloudError = (e: any, context: string) => {
+  const msg = e?.message || '';
+  // Check for various permission denied signatures
+  if (msg.includes('Missing or insufficient permissions') || e?.code === 'permission-denied' || msg.includes('Permission denied')) {
+     if (!cloudDisabled) {
+         console.warn(`[${context}] Cloud permission denied. Disabling cloud sync for this session to prevent errors.`);
+         cloudDisabled = true;
+     }
+  } else {
+     console.debug(`[${context}] Cloud skipped:`, e);
+  }
+};
+
 // --- Results API ---
 
 export const saveResult = async (type: 'quiz' | 'exam', score: number, total: number, level: HSKLevel) => {
@@ -111,14 +138,14 @@ export const saveResult = async (type: 'quiz' | 'exam', score: number, total: nu
 
   let savedToCloud = false;
 
-  if (user) {
-    // CLOUD
+  if (user && !cloudDisabled) {
+    // CLOUD (Compat)
     try {
-      const resultsRef = collection(db, 'users', user.uid, 'results');
-      await withTimeout(addDoc(resultsRef, data));
+      const resultsRef = db.collection('users').doc(user.uid).collection('results');
+      await withTimeout(resultsRef.add(data));
       savedToCloud = true;
     } catch (e) {
-      console.debug("Cloud save skipped (offline/timeout):", e);
+      handleCloudError(e, 'saveResult');
     }
   } 
   
@@ -138,16 +165,16 @@ export const getRecentResults = async () => {
   const results: any[] = [];
   let fetchedFromCloud = false;
 
-  if (user) {
-    // CLOUD
+  if (user && !cloudDisabled) {
+    // CLOUD (Compat)
     try {
-      const resultsRef = collection(db, 'users', user.uid, 'results');
-      const q = query(resultsRef, orderBy('timestamp', 'desc'), limit(20));
-      const snapshot = await withTimeout<QuerySnapshot<DocumentData>>(getDocs(q));
-      snapshot.forEach(doc => results.push(doc.data()));
+      const resultsRef = db.collection('users').doc(user.uid).collection('results');
+      const q = resultsRef.orderBy('timestamp', 'desc').limit(20);
+      const snapshot = await withTimeout(q.get()) as any;
+      snapshot.forEach((doc: any) => results.push(doc.data()));
       fetchedFromCloud = true;
     } catch (e) {
-       console.debug("Cloud fetch skipped (offline/timeout):", e);
+       handleCloudError(e, 'getRecentResults');
     }
   } 
   
@@ -180,6 +207,7 @@ export const saveVocabProgress = async (card: VocabCard, level: HSKLevel, rating
     pinyin: card.pinyin,
     translation: card.translation,
     exampleSentence: card.exampleSentence,
+    examplePinyin: card.examplePinyin || '',
     exampleTranslation: card.exampleTranslation,
     level,
     rating,
@@ -188,14 +216,14 @@ export const saveVocabProgress = async (card: VocabCard, level: HSKLevel, rating
 
   let savedToCloud = false;
 
-  if (user) {
-    // CLOUD
+  if (user && !cloudDisabled) {
+    // CLOUD (Compat)
     try {
-      const docRef = doc(db, 'users', user.uid, 'vocabulary', card.character);
-      await withTimeout(setDoc(docRef, vocabData, { merge: true }));
+      const docRef = db.collection('users').doc(user.uid).collection('vocabulary').doc(card.character);
+      await withTimeout(docRef.set(vocabData, { merge: true }));
       savedToCloud = true;
     } catch (e) {
-      console.debug("Cloud save skipped (offline/timeout):", e);
+      handleCloudError(e, 'saveVocabProgress');
     }
   } 
   
@@ -223,24 +251,25 @@ export const toggleVocabBookmark = async (card: VocabCard, level: HSKLevel) => {
   let newBookmarkState = !card.bookmarked;
   let savedToCloud = false;
 
-  if (user) {
-    // CLOUD
+  if (user && !cloudDisabled) {
+    // CLOUD (Compat)
     try {
-      const docRef = doc(db, 'users', user.uid, 'vocabulary', card.character);
+      const docRef = db.collection('users').doc(user.uid).collection('vocabulary').doc(card.character);
       const updateData = {
           character: card.character,
           pinyin: card.pinyin,
           translation: card.translation,
           exampleSentence: card.exampleSentence,
+          examplePinyin: card.examplePinyin || '',
           exampleTranslation: card.exampleTranslation,
           level,
           bookmarked: newBookmarkState,
           lastReviewed: Date.now()
       };
-      await withTimeout(setDoc(docRef, updateData, { merge: true }));
+      await withTimeout(docRef.set(updateData, { merge: true }));
       savedToCloud = true;
     } catch (e) {
-      console.debug("Cloud toggle skipped (offline/timeout):", e);
+      handleCloudError(e, 'toggleVocabBookmark');
     }
   } 
   
@@ -260,6 +289,7 @@ export const toggleVocabBookmark = async (card: VocabCard, level: HSKLevel) => {
         pinyin: card.pinyin,
         translation: card.translation,
         exampleSentence: card.exampleSentence,
+        examplePinyin: card.examplePinyin || (existing?.examplePinyin || ''),
         exampleTranslation: card.exampleTranslation,
         level,
         rating: existing?.rating,
@@ -278,16 +308,16 @@ export const toggleVocabBookmark = async (card: VocabCard, level: HSKLevel) => {
 export const getBookmarkedWords = async (level: HSKLevel): Promise<VocabCard[]> => {
   const user = getUser();
   
-  if (user) {
-    // CLOUD
+  if (user && !cloudDisabled) {
+    // CLOUD (Compat)
     try {
-      const vocabRef = collection(db, 'users', user.uid, 'vocabulary');
-      const q = query(vocabRef, where("bookmarked", "==", true), where("level", "==", level));
-      const snapshot = await withTimeout<QuerySnapshot<DocumentData>>(getDocs(q));
-      const cards = snapshot.docs.map(d => d.data() as VocabCard);
+      const vocabRef = db.collection('users').doc(user.uid).collection('vocabulary');
+      const q = vocabRef.where("bookmarked", "==", true).where("level", "==", level);
+      const snapshot = await withTimeout(q.get()) as any;
+      const cards = snapshot.docs.map((d: any) => d.data() as VocabCard);
       return cards;
     } catch (e) {
-      console.debug("Cloud bookmarks fetch skipped (offline/timeout):", e);
+      handleCloudError(e, 'getBookmarkedWords');
     }
   } 
   
@@ -302,6 +332,7 @@ export const getBookmarkedWords = async (level: HSKLevel): Promise<VocabCard[]> 
         pinyin: v.pinyin,
         translation: v.translation,
         exampleSentence: v.exampleSentence,
+        examplePinyin: v.examplePinyin,
         exampleTranslation: v.exampleTranslation,
         bookmarked: true
       }));
@@ -311,7 +342,7 @@ export const getBookmarkedWords = async (level: HSKLevel): Promise<VocabCard[]> 
   }
 };
 
-export const getVocabStats = async () => {
+export const getVocabStats = async (level?: HSKLevel) => {
   const user = getUser();
   const last7Days: Record<string, number> = {};
   const today = new Date();
@@ -326,15 +357,15 @@ export const getVocabStats = async () => {
   let allVocab: any[] = [];
   let fetchedFromCloud = false;
 
-  if (user) {
-    // CLOUD
+  if (user && !cloudDisabled) {
+    // CLOUD (Compat)
     try {
-      const vocabRef = collection(db, 'users', user.uid, 'vocabulary');
-      const snapshot = await withTimeout<QuerySnapshot<DocumentData>>(getDocs(vocabRef));
-      allVocab = snapshot.docs.map(d => d.data());
+      const vocabRef = db.collection('users').doc(user.uid).collection('vocabulary');
+      const snapshot = await withTimeout(vocabRef.get()) as any;
+      allVocab = snapshot.docs.map((d: any) => d.data());
       fetchedFromCloud = true;
     } catch (e) {
-      console.debug("Cloud stats fetch skipped (offline/timeout):", e);
+      handleCloudError(e, 'getVocabStats');
     }
   } 
   
@@ -346,6 +377,10 @@ export const getVocabStats = async () => {
     } catch (e) {
       console.error("Failed to fetch local stats:", e);
     }
+  }
+
+  if (level) {
+    allVocab = allVocab.filter(v => v.level === level);
   }
 
   allVocab.forEach(v => {
@@ -371,12 +406,12 @@ export const getUserStats = async () => {
   // Vocab Stats
   try {
     let allVocab: any[] = [];
-    if (user) {
+    if (user && !cloudDisabled) {
         try {
-            const vocabRef = collection(db, 'users', user.uid, 'vocabulary');
-            const snap = await withTimeout<QuerySnapshot<DocumentData>>(getDocs(vocabRef));
-            allVocab = snap.docs.map(d => d.data());
-        } catch(e) { /* ignore offline */ }
+            const vocabRef = db.collection('users').doc(user.uid).collection('vocabulary');
+            const snap = await withTimeout(vocabRef.get()) as any;
+            allVocab = snap.docs.map((d: any) => d.data());
+        } catch(e) { handleCloudError(e, 'getUserStats-vocab'); }
     }
     if (allVocab.length === 0) {
         const localDb = await initDB();
@@ -388,12 +423,12 @@ export const getUserStats = async () => {
   // Result Stats
   try {
      let allResults: any[] = [];
-     if (user) {
+     if (user && !cloudDisabled) {
          try {
-             const resRef = collection(db, 'users', user.uid, 'results');
-             const snap = await withTimeout<QuerySnapshot<DocumentData>>(getDocs(resRef));
-             allResults = snap.docs.map(d => d.data());
-         } catch(e) { /* ignore offline */ }
+             const resRef = db.collection('users').doc(user.uid).collection('results');
+             const snap = await withTimeout(resRef.get()) as any;
+             allResults = snap.docs.map((d: any) => d.data());
+         } catch(e) { handleCloudError(e, 'getUserStats-results'); }
      }
      if (allResults.length === 0) {
          const localDb = await initDB();
@@ -419,44 +454,125 @@ export const getGoalAdvice = async (level: HSKLevel, language: AppLanguage = App
     return "Keep practicing with the AI Tutor to improve your grammar and natural phrasing!";
 };
 
+// --- Global Audio Cache API ---
+
+export const getCachedAudio = async (text: string): Promise<string | null> => {
+  // 1. Check Local IndexedDB
+  try {
+    const localDb = await initDB();
+    const cached = await localDb.get('global_audio', text);
+    if (cached) {
+      return cached.audio;
+    }
+  } catch (e) {
+    console.warn("Local audio cache fetch failed", e);
+  }
+
+  // 2. Check Cloud (Firestore) - Shared global collection
+  try {
+    if (cloudDisabled) return null;
+    
+    // Clean text to avoid invalid ID characters, or use query
+    const audioRef = db.collection('global_audio_cache');
+    const q = audioRef.where("text", "==", text).limit(1);
+    const snapshot = await withTimeout(q.get(), 1500) as any;
+    
+    if (!snapshot.empty) {
+      const data = snapshot.docs[0].data();
+      // Cache it locally for next time
+      try {
+         const localDb = await initDB();
+         await localDb.put('global_audio', {
+             text: text,
+             audio: data.audio,
+             timestamp: Date.now()
+         });
+      } catch(e) {}
+
+      return data.audio;
+    }
+  } catch (e) {
+    handleCloudError(e, 'getCachedAudio');
+  }
+
+  return null;
+};
+
+export const saveCachedAudio = async (text: string, audioBase64: string) => {
+  // 1. Save to Local DB
+  try {
+     const localDb = await initDB();
+     await localDb.put('global_audio', {
+         text: text,
+         audio: audioBase64,
+         timestamp: Date.now()
+     });
+  } catch (e) {
+     console.warn("Local audio save failed", e);
+  }
+
+  // 2. Save to Cloud (Global) - Best effort, don't block
+  const user = getUser();
+  if (user && !cloudDisabled) {
+    try {
+       // Check if exists first to avoid duplicate heavy writes
+       const audioRef = db.collection('global_audio_cache');
+       const q = audioRef.where("text", "==", text).limit(1);
+       const snapshot = await q.get();
+       
+       if (snapshot.empty) {
+           await audioRef.add({
+               text: text,
+               audio: audioBase64,
+               timestamp: Date.now(),
+               contributor: user.uid // Optional: track who generated it
+           });
+       }
+    } catch (e) {
+       handleCloudError(e, 'saveCachedAudio');
+    }
+  }
+};
+
+
 // --- Chat History API ---
 
 export const saveChatMessage = async (msg: ChatMessage) => {
   const user = getUser();
-  if (user) {
+  if (user && !cloudDisabled) {
     try {
-      const chatRef = collection(db, 'users', user.uid, 'chat_history');
-      await withTimeout(setDoc(doc(chatRef, msg.id), {
+      const chatRef = db.collection('users').doc(user.uid).collection('chat_history').doc(msg.id);
+      await withTimeout(chatRef.set({
         ...msg,
         timestamp: Date.now()
       }));
     } catch (e) {
-      console.debug("Cloud chat save skipped", e);
+      handleCloudError(e, 'saveChatMessage');
     }
   }
 };
 
 export const updateMessageAudio = async (msgId: string, audioBase64: string) => {
   const user = getUser();
-  if (user) {
+  if (user && !cloudDisabled) {
     try {
-      const chatRef = doc(db, 'users', user.uid, 'chat_history', msgId);
-      await setDoc(chatRef, { audio: audioBase64 }, { merge: true });
+      const chatRef = db.collection('users').doc(user.uid).collection('chat_history').doc(msgId);
+      await chatRef.set({ audio: audioBase64 }, { merge: true });
     } catch (e) {
-      console.debug("Cloud audio update skipped", e);
+      handleCloudError(e, 'updateMessageAudio');
     }
   }
 };
 
 export const getChatHistory = async (): Promise<ChatMessage[]> => {
   const user = getUser();
-  if (!user) return [];
+  if (!user || cloudDisabled) return [];
   
   try {
-    const chatRef = collection(db, 'users', user.uid, 'chat_history');
-    const q = query(chatRef, orderBy('timestamp', 'asc'), limit(50));
-    const snapshot = await withTimeout<QuerySnapshot<DocumentData>>(getDocs(q));
-    return snapshot.docs.map(d => {
+    const chatRef = db.collection('users').doc(user.uid).collection('chat_history');
+    const q = chatRef.orderBy('timestamp', 'asc').limit(50);
+    const snapshot = await withTimeout(q.get()) as any;
+    return snapshot.docs.map((d: any) => {
         const data = d.data();
         return {
             id: data.id,
@@ -468,21 +584,22 @@ export const getChatHistory = async (): Promise<ChatMessage[]> => {
         } as ChatMessage;
     });
   } catch (e) {
-    console.debug("Cloud chat fetch error", e);
+    handleCloudError(e, 'getChatHistory');
     return [];
   }
 };
 
 export const clearChatHistory = async () => {
     const user = getUser();
-    if (!user) return;
+    if (!user || cloudDisabled) return;
     try {
-        const chatRef = collection(db, 'users', user.uid, 'chat_history');
-        const snapshot = await getDocs(chatRef);
-        const promises = snapshot.docs.map(d => deleteDoc(d.ref));
-        await Promise.all(promises);
+        const chatRef = db.collection('users').doc(user.uid).collection('chat_history');
+        const snapshot = await chatRef.get();
+        const batch = db.batch();
+        snapshot.forEach((d: any) => batch.delete(d.ref));
+        await batch.commit();
     } catch (e) {
-        console.error("Clear chat error", e);
+        handleCloudError(e, 'clearChatHistory');
     }
 };
 
@@ -493,12 +610,12 @@ export const savePronunciationAttempt = async (attempt: PronunciationAttempt) =>
   const id = `${attempt.word}_${attempt.timestamp}`;
   const data = { ...attempt, id };
 
-  if (user) {
+  if (user && !cloudDisabled) {
     try {
-      const ref = doc(db, 'users', user.uid, 'pronunciation_history', id);
-      await setDoc(ref, data);
+      const ref = db.collection('users').doc(user.uid).collection('pronunciation_history').doc(id);
+      await ref.set(data);
     } catch (e) {
-      console.debug("Cloud pron save skipped", e);
+      handleCloudError(e, 'savePronunciationAttempt');
     }
   }
 
@@ -514,21 +631,21 @@ export const getPronunciationHistory = async (word: string): Promise<Pronunciati
   const user = getUser();
   let results: PronunciationAttempt[] = [];
 
-  if (user) {
+  if (user && !cloudDisabled) {
     try {
-      const ref = collection(db, 'users', user.uid, 'pronunciation_history');
-      const q = query(ref, where("word", "==", word), orderBy("timestamp", "desc"), limit(10));
-      const snap = await getDocs(q);
-      results = snap.docs.map(d => d.data() as PronunciationAttempt);
+      const ref = db.collection('users').doc(user.uid).collection('pronunciation_history');
+      const q = ref.where("word", "==", word).orderBy("timestamp", "desc").limit(10);
+      const snap = await q.get();
+      results = snap.docs.map((d: any) => d.data() as PronunciationAttempt);
     } catch (e) {
-      console.debug("Cloud pron fetch skipped", e);
+      handleCloudError(e, 'getPronunciationHistory');
     }
   }
 
   if (results.length === 0) {
     try {
       const localDb = await initDB();
-      results = await localDb.getAllByIndex('pronunciation_history', 'by-word', word);
+      results = await localDb.getAllFromIndex('pronunciation_history', 'by-word', word);
       results.sort((a, b) => b.timestamp - a.timestamp);
       results = results.slice(0, 10);
     } catch (e) {
@@ -544,11 +661,11 @@ export const getPronunciationHistory = async (word: string): Promise<Pronunciati
 export const saveUserGoals = async (goals: UserGoals) => {
   const user = getUser();
   
-  if (user) {
+  if (user && !cloudDisabled) {
     try {
-      const ref = doc(db, 'users', user.uid, 'settings', 'goals');
-      await setDoc(ref, goals);
-    } catch (e) { console.debug("Cloud goal save skipped", e); }
+      const ref = db.collection('users').doc(user.uid).collection('settings').doc('goals');
+      await ref.set(goals);
+    } catch (e) { handleCloudError(e, 'saveUserGoals'); }
   }
 
   try {
@@ -566,12 +683,12 @@ export const getUserGoals = async (): Promise<UserGoals> => {
     dailyPronunciation: 10
   };
 
-  if (user) {
+  if (user && !cloudDisabled) {
     try {
-      const ref = doc(db, 'users', user.uid, 'settings', 'goals');
-      const snap = await getDoc(ref);
-      if (snap.exists()) return { ...defaultGoals, ...snap.data() } as UserGoals;
-    } catch (e) { console.debug("Cloud goal fetch skipped", e); }
+      const ref = db.collection('users').doc(user.uid).collection('settings').doc('goals');
+      const snap = await ref.get();
+      if (snap.exists) return { ...defaultGoals, ...snap.data() } as UserGoals;
+    } catch (e) { handleCloudError(e, 'getUserGoals'); }
   }
 
   try {
@@ -587,17 +704,17 @@ export const updateStudyTime = async (minutes: number) => {
   const user = getUser();
   const dateKey = new Date().toISOString().split('T')[0];
 
-  if (user) {
+  if (user && !cloudDisabled) {
     try {
-      const ref = doc(db, 'users', user.uid, 'daily_stats', dateKey);
-      const snap = await getDoc(ref);
-      const current = snap.exists() ? snap.data() : {};
-      await setDoc(ref, { 
+      const ref = db.collection('users').doc(user.uid).collection('daily_stats').doc(dateKey);
+      const snap = await ref.get();
+      const current = snap.exists ? snap.data() : {};
+      await ref.set({ 
         ...current,
         date: dateKey, 
-        minutes: (current.minutes || 0) + minutes 
+        minutes: (current?.minutes || 0) + minutes 
       }, { merge: true });
-    } catch (e) { console.debug("Cloud time update skipped", e); }
+    } catch (e) { handleCloudError(e, 'updateStudyTime'); }
   }
 
   try {
@@ -613,17 +730,17 @@ export const updateSpeakingTime = async (minutes: number) => {
   const user = getUser();
   const dateKey = new Date().toISOString().split('T')[0];
 
-  if (user) {
+  if (user && !cloudDisabled) {
     try {
-      const ref = doc(db, 'users', user.uid, 'daily_stats', dateKey);
-      const snap = await getDoc(ref);
-      const current = snap.exists() ? snap.data() : {};
-      await setDoc(ref, { 
+      const ref = db.collection('users').doc(user.uid).collection('daily_stats').doc(dateKey);
+      const snap = await ref.get();
+      const current = snap.exists ? snap.data() : {};
+      await ref.set({ 
         ...current,
         date: dateKey, 
-        speakingMinutes: (current.speakingMinutes || 0) + minutes 
+        speakingMinutes: (current?.speakingMinutes || 0) + minutes 
       }, { merge: true });
-    } catch (e) { console.debug("Cloud speaking time update skipped", e); }
+    } catch (e) { handleCloudError(e, 'updateSpeakingTime'); }
   }
 
   try {
@@ -646,16 +763,18 @@ export const getDailyProgress = async (): Promise<DailyProgress> => {
   let pronCount = 0;
 
   // 1. Get Time Stats
-  if (user) {
+  if (user && !cloudDisabled) {
     try {
-      const ref = doc(db, 'users', user.uid, 'daily_stats', dateKey);
-      const snap = await getDoc(ref);
-      if (snap.exists()) {
+      const ref = db.collection('users').doc(user.uid).collection('daily_stats').doc(dateKey);
+      const snap = await ref.get();
+      if (snap.exists) {
         const d = snap.data();
-        minutes = d.minutes || 0;
-        speakingMinutes = d.speakingMinutes || 0;
+        minutes = d?.minutes || 0;
+        speakingMinutes = d?.speakingMinutes || 0;
       }
-    } catch (e) {}
+    } catch (e) {
+      handleCloudError(e, 'getDailyProgress-stats');
+    }
   } else {
       try {
         const localDb = await initDB();
@@ -668,20 +787,20 @@ export const getDailyProgress = async (): Promise<DailyProgress> => {
   }
 
   // 2. Get Words Reviewed Today
-  if (user) {
+  if (user && !cloudDisabled) {
     try {
-        const ref = collection(db, 'users', user.uid, 'vocabulary');
-        const q = query(ref, where("lastReviewed", ">=", startOfDay));
-        const snap = await getDocs(q);
+        const ref = db.collection('users').doc(user.uid).collection('vocabulary');
+        const q = ref.where("lastReviewed", ">=", startOfDay);
+        const snap = await q.get();
         words = snap.size;
-    } catch(e) {}
+    } catch(e) { handleCloudError(e, 'getDailyProgress-vocab'); }
     
     try {
-        const ref = collection(db, 'users', user.uid, 'pronunciation_history');
-        const q = query(ref, where("timestamp", ">=", startOfDay));
-        const snap = await getDocs(q);
+        const ref = db.collection('users').doc(user.uid).collection('pronunciation_history');
+        const q = ref.where("timestamp", ">=", startOfDay);
+        const snap = await q.get();
         pronCount = snap.size;
-    } catch(e) {}
+    } catch(e) { handleCloudError(e, 'getDailyProgress-pron'); }
 
   }
 

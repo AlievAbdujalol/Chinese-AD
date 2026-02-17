@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { generateVocabularyBatch, playTextToSpeech, getFriendlyErrorMessage } from '../services/gemini';
 import { saveVocabProgress, toggleVocabBookmark } from '../services/db';
@@ -52,6 +53,7 @@ const VocabReview: React.FC<Props> = ({ language, level }) => {
   };
 
   const handleRate = async (rating: 'hard' | 'good' | 'easy') => {
+    if (!cards[currentIndex]) return;
     const currentCard = cards[currentIndex];
     await saveVocabProgress(currentCard, level, rating);
 
@@ -66,6 +68,7 @@ const VocabReview: React.FC<Props> = ({ language, level }) => {
 
   const toggleBookmark = async (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (!cards[currentIndex]) return;
     const currentCard = cards[currentIndex];
     try {
       const newState = await toggleVocabBookmark(currentCard, level);
@@ -144,6 +147,9 @@ const VocabReview: React.FC<Props> = ({ language, level }) => {
   }
 
   const card = cards[currentIndex];
+  
+  // Guard against render race conditions where card is undefined
+  if (!card) return null;
 
   return (
     <div className="h-full flex flex-col p-6 bg-gray-50 overflow-hidden">
@@ -162,6 +168,14 @@ const VocabReview: React.FC<Props> = ({ language, level }) => {
              {/* Front */}
              <div className="absolute inset-0 backface-hidden bg-white rounded-3xl shadow-xl border border-gray-200 flex flex-col items-center justify-center p-8 text-center" style={{ backfaceVisibility: 'hidden' }}>
                 <div className="absolute top-4 left-4 z-50">
+                  <button 
+                    onClick={(e) => playAudio(card.character, e)} 
+                    className="p-3 bg-red-50 text-red-600 rounded-full hover:bg-red-100 transition-colors hover:scale-110 active:scale-90 shadow-sm"
+                  >
+                    <Volume2 size={24} />
+                  </button>
+                </div>
+                <div className="absolute top-4 right-4 z-50">
                    <button 
                      onClick={toggleBookmark}
                      className={`p-3 rounded-full transition-colors ${card.bookmarked ? 'text-yellow-400 bg-yellow-50' : 'text-gray-300 hover:text-yellow-400'}`}
@@ -179,13 +193,21 @@ const VocabReview: React.FC<Props> = ({ language, level }) => {
 
              {/* Back */}
              <div className="absolute inset-0 backface-hidden bg-white rounded-3xl shadow-xl border-2 border-red-100 flex flex-col items-center justify-center p-6 text-center overflow-hidden" style={{ backfaceVisibility: 'hidden', transform: 'rotateY(180deg)' }}>
-                <div className="absolute top-4 right-4 z-50">
+                <div className="absolute top-4 left-4 z-50">
                   <button 
                     onClick={(e) => playAudio(card.character, e)} 
                     className="p-3 bg-red-50 text-red-600 rounded-full hover:bg-red-100 transition-colors hover:scale-110 active:scale-90 shadow-sm"
                   >
                     <Volume2 size={24} />
                   </button>
+                </div>
+                <div className="absolute top-4 right-4 z-50">
+                   <button 
+                     onClick={toggleBookmark}
+                     className={`p-3 rounded-full transition-colors ${card.bookmarked ? 'text-yellow-400 bg-yellow-50' : 'text-gray-300 hover:text-yellow-400'}`}
+                   >
+                     <Star size={24} fill={card.bookmarked ? "currentColor" : "none"} />
+                   </button>
                 </div>
                 
                 <h2 className="text-6xl font-bold text-gray-800 mb-1">{card.character}</h2>
@@ -196,6 +218,7 @@ const VocabReview: React.FC<Props> = ({ language, level }) => {
                   {showExample ? (
                     <div className="w-full bg-gray-50 p-4 rounded-xl text-left animate-fade-in border border-gray-100">
                       <p className="text-lg text-gray-800 mb-1 leading-tight">{card.exampleSentence}</p>
+                      {card.examplePinyin && <p className="text-md text-red-500 mb-1 font-medium">{card.examplePinyin}</p>}
                       <p className="text-sm text-gray-500 italic leading-tight">{card.exampleTranslation}</p>
                       <button 
                         onClick={(e) => { e.stopPropagation(); setShowExample(false); }}

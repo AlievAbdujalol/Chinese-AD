@@ -43,7 +43,8 @@ const Login: React.FC<Props> = ({ onGuestLogin }) => {
       if (!isMounted.current) return;
 
       // Only log unexpected errors to keep console clean
-      if (err.code !== 'auth/invalid-credential' && err.code !== 'auth/email-already-in-use') {
+      const knownErrors = ['auth/invalid-credential', 'auth/user-not-found', 'auth/wrong-password', 'auth/email-already-in-use', 'auth/weak-password', 'auth/too-many-requests'];
+      if (!knownErrors.includes(err.code)) {
          console.error(err);
       }
 
@@ -81,7 +82,9 @@ const Login: React.FC<Props> = ({ onGuestLogin }) => {
         return; 
       }
       
-      console.error("Google login error:", err);
+      if (err.code !== 'auth/unauthorized-domain' && err.code !== 'auth/popup-blocked') {
+         console.error("Google login error:", err);
+      }
       
       if (err.code === 'auth/unauthorized-domain') {
         const currentDomain = window.location.hostname;

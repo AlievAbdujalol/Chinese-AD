@@ -57,7 +57,16 @@ export const translations = {
       thinking: 'Deep Thinking',
       sources: 'Sources:',
       imageAttached: 'Image attached',
-      clearChat: 'Clear History'
+      clearChat: 'Clear History',
+      practiceMode: 'Pronunciation',
+      chatMode: 'AI Tutor',
+      flashcardMode: 'Vocab Review',
+      practiceTitle: 'Pronunciation Coach',
+      practiceDesc: 'Listen to the native pronunciation and record yourself. I will rate your accuracy.',
+      practiceGen: 'Generate Phrase',
+      listening: 'Listen',
+      recording: 'Hold to Record',
+      feedback: 'Feedback'
     },
     live: {
       title: 'Live Conversation',
@@ -183,7 +192,16 @@ export const translations = {
       thinking: 'Глубокое мышление',
       sources: 'Источники:',
       imageAttached: 'Изображение прикреплено',
-      clearChat: 'Очистить чат'
+      clearChat: 'Очистить чат',
+      practiceMode: 'Произношение',
+      chatMode: 'Чат',
+      flashcardMode: 'Карточки',
+      practiceTitle: 'Тренер произношения',
+      practiceDesc: 'Слушайте правильное произношение и повторяйте. Я оценю вашу точность.',
+      practiceGen: 'Новая фраза',
+      listening: 'Слушать',
+      recording: 'Удерживайте для записи',
+      feedback: 'Отзыв'
     },
     live: {
       title: 'Разговорная практика',
@@ -309,7 +327,16 @@ export const translations = {
       thinking: 'Фикрронии амиқ',
       sources: 'Манбаъҳо:',
       imageAttached: 'Расм замима шуд',
-      clearChat: 'Тоза кардани таърих'
+      clearChat: 'Тоза кардани таърих',
+      practiceMode: 'Талаффуз',
+      chatMode: 'Чат',
+      flashcardMode: 'Кортҳо',
+      practiceTitle: 'Мураббии талаффуз',
+      practiceDesc: 'Талаффузи дурустро гӯш кунед ва такрор кунед. Ман баҳои шуморо медиҳам.',
+      practiceGen: 'Ибораи нав',
+      listening: 'Гӯш кардан',
+      recording: 'Барои сабт нигоҳ доред',
+      feedback: 'Натиҷа'
     },
     live: {
       title: 'Машқи зинда',

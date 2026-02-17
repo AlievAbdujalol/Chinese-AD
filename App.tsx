@@ -9,11 +9,12 @@ import ExamMode from './components/ExamMode';
 import VocabReview from './components/VocabReview';
 import VocabBookmarks from './components/VocabBookmarks';
 import Profile from './components/Profile';
+import ImageGen from './components/ImageGen';
 import Login from './components/Login';
 import { AppMode, AppLanguage, HSKLevel } from './types';
 import { Menu, Globe, Settings } from 'lucide-react';
 import { auth } from './services/firebase';
-import { onAuthStateChanged, User } from 'firebase/auth';
+import firebase from 'firebase/compat/app';
 import { getLevelTheme } from './utils/theme';
 import { updateStudyTime } from './services/db';
 
@@ -28,12 +29,26 @@ const App: React.FC = () => {
   const [language, setLanguage] = useState<AppLanguage>(AppLanguage.EN);
   const [level, setLevel] = useState<HSKLevel>(HSKLevel.HSK1);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<firebase.User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [isGuest, setIsGuest] = useState(false);
 
+  // Persist Tutor Mode (Chat vs Review)
+  const [tutorSubMode, setTutorSubMode] = useState<'chat' | 'review'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('hsk_tutor_submode');
+      return (saved === 'chat' || saved === 'review') ? saved : 'chat';
+    }
+    return 'chat';
+  });
+
+  const handleTutorModeChange = (m: 'chat' | 'review') => {
+    setTutorSubMode(m);
+    localStorage.setItem('hsk_tutor_submode', m);
+  };
+
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    const unsubscribe = auth.onAuthStateChanged((currentUser) => {
       setUser(currentUser);
       setAuthLoading(false);
       // Reset guest mode if actual login occurs
@@ -64,7 +79,7 @@ const App: React.FC = () => {
       email: 'local-session',
       photoURL: null,
       providerData: []
-  } as unknown as User;
+  } as unknown as firebase.User;
 
   const activeUser = user || (isGuest ? guestUser : null);
 
@@ -77,7 +92,13 @@ const App: React.FC = () => {
       case AppMode.DASHBOARD:
         return <Dashboard {...commonProps} />;
       case AppMode.TUTOR:
-        return <TextTutor {...commonProps} />;
+        return (
+          <TextTutor 
+            {...commonProps} 
+            initialTutorMode={tutorSubMode}
+            onTutorModeChange={handleTutorModeChange}
+          />
+        );
       case AppMode.LIVE:
         return <LiveTutor {...commonProps} />;
       case AppMode.QUIZ:
@@ -86,6 +107,8 @@ const App: React.FC = () => {
         return <ExamMode {...commonProps} />;
       case AppMode.VOCAB:
         return <VocabReview {...commonProps} />;
+      case AppMode.VISUALS:
+        return <ImageGen language={language} />;
       case AppMode.BOOKMARKS:
         return <VocabBookmarks {...commonProps} />;
       case AppMode.PROFILE:

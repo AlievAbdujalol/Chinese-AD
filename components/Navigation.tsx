@@ -1,6 +1,7 @@
+
 import React from 'react';
 import { AppMode, AppLanguage } from '../types';
-import { BarChart2, MessageCircle, Mic, GraduationCap, FileText, BookOpen, Star, LogOut, Cloud, User } from 'lucide-react';
+import { BarChart2, MessageCircle, Mic, GraduationCap, FileText, BookOpen, Star, LogOut, Cloud, User, Image as ImageIcon } from 'lucide-react';
 import { translations } from '../utils/translations';
 import { logout } from '../services/firebase';
 
@@ -20,6 +21,7 @@ const Navigation: React.FC<Props> = ({ currentMode, setMode, isMobile, language,
     { mode: AppMode.PROFILE, icon: <User size={20} />, label: t.profile },
     { mode: AppMode.TUTOR, icon: <MessageCircle size={20} />, label: t.tutor },
     { mode: AppMode.LIVE, icon: <Mic size={20} />, label: t.live },
+    { mode: AppMode.VISUALS, icon: <ImageIcon size={20} />, label: t.visuals },
     { mode: AppMode.VOCAB, icon: <BookOpen size={20} />, label: t.vocab },
     { mode: AppMode.BOOKMARKS, icon: <Star size={20} />, label: t.bookmarks },
     { mode: AppMode.QUIZ, icon: <GraduationCap size={20} />, label: t.quiz },

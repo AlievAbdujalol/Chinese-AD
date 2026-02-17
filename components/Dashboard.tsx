@@ -167,9 +167,10 @@ const Dashboard: React.FC<Props> = ({ level, language }) => {
        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 min-w-0 flex flex-col">
              <h3 className="font-bold text-lg mb-4 text-gray-700">{t.vocab} (Last 7 Days)</h3>
-             <div className="w-full" style={{ height: 300 }}>
+             {/* Robust container for Recharts to calculate dimensions correctly */}
+             <div className="w-full h-[300px] min-w-0 relative">
                {vocabData.length > 0 ? (
-                 <ResponsiveContainer width="100%" height="100%">
+                 <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                    <BarChart data={vocabData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
                       <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#9ca3af', fontSize: 12}} dy={10} />
@@ -191,9 +192,10 @@ const Dashboard: React.FC<Props> = ({ level, language }) => {
 
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 min-w-0 flex flex-col">
              <h3 className="font-bold text-lg mb-4 text-gray-700">{t.quizPerf} (Recent)</h3>
-             <div className="w-full" style={{ height: 300 }}>
+             {/* Robust container for Recharts to calculate dimensions correctly */}
+             <div className="w-full h-[300px] min-w-0 relative">
                {quizData.length > 0 ? (
-                 <ResponsiveContainer width="100%" height="100%">
+                 <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                    <LineChart data={quizData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
                       <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#9ca3af', fontSize: 12}} dy={10} />

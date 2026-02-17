@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Type, LiveServerMessage, Modality, HarmCategory, HarmBlockThreshold } from "@google/genai";
 import { AppLanguage, HSKLevel, QuizQuestion, ExamData, VocabCard } from "../types";
 
@@ -14,18 +15,33 @@ const LANG_NAMES = {
 
 export function getFriendlyErrorMessage(error: any): string {
   const msg = error?.message || error?.toString() || '';
+  const name = error?.name || '';
   
+  // Microphone / Device Permissions (Check this first)
+  // "Permission denied" often comes from getUserMedia in browsers like Firefox/Safari
+  if (name === 'NotAllowedError' || 
+      name === 'PermissionDeniedError' || 
+      msg.toLowerCase().includes('microphone') || 
+      msg.includes('getUserMedia') ||
+      msg.trim() === 'Permission denied') {
+      return "Microphone access denied. Please allow microphone permissions in your browser settings.";
+  }
+
   // Quota & Service
   if (msg.includes('429') || msg.includes('Quota')) return "Daily AI quota exceeded. Please try again later.";
   if (msg.includes('503') || msg.includes('Overloaded') || msg.includes('unavailable')) return "AI service is currently busy/unavailable. Please try again in a moment.";
   
-  // Auth & Permissions
-  if (msg.includes('403') || msg.includes('Permission') || msg.includes('PERMISSION_DENIED')) return "Access denied. Please check your API key settings.";
+  // Auth & Permissions (API Key)
+  if (msg.includes('403') || msg.includes('PERMISSION_DENIED') || (msg.includes('Permission') && msg.includes('API key'))) {
+     if (msg.includes('Live') || msg.includes('audio')) return "Access denied. Live API requires a valid API key with billing enabled.";
+     return "Access denied. Please check your API key settings or billing.";
+  }
   
   // Request Issues
   if (msg.includes('400') || msg.includes('INVALID_ARGUMENT')) {
       if (msg.includes('symbol') || msg.includes('supported')) return "Text contains only symbols or unsupported characters.";
       if (msg.includes('text') && msg.includes('TTS')) return "TTS Generation failed. Switching to browser voice.";
+      if (msg.includes('Model tried to generate text')) return "TTS Model Error. Switching to browser voice.";
       return "The request was invalid. Please try a different prompt.";
   }
   
@@ -62,11 +78,22 @@ async function retryOperation<T>(operation: () => Promise<T>): Promise<T> {
       const msg = error?.message || '';
       const status = error?.status;
       
-      // Retry on 503 (Unavailable), 429 (Too Many Requests), or specific 400 TTS hallucination
-      const isTransient = status === 503 || msg.includes('503') || msg.includes('Overloaded') || status === 429 || msg.includes('Quota');
-      const isTTSHallucination = msg.includes('Model tried to generate text') && msg.includes('TTS');
+      // Stop retrying if the model explicitly says it tried to generate text (Hallucination/Misuse error)
+      if ((msg.includes('Model tried to generate text') && msg.includes('TTS')) || msg.includes('INVALID_ARGUMENT')) {
+         // Log as debug to avoid console noise, as this is a known API behavior we handle via fallback
+         console.debug("TTS Model Hallucination/Invalid Arg (Non-retriable):", msg);
+         throw error;
+      }
+      
+      // Stop retrying on Safety blocks
+      if (msg.includes('safety') || msg.includes('blocked')) {
+         throw error;
+      }
 
-      if (isTransient || isTTSHallucination) {
+      // Retry on 503 (Unavailable), 429 (Too Many Requests)
+      const isTransient = status === 503 || msg.includes('503') || msg.includes('Overloaded') || status === 429 || msg.includes('Quota');
+
+      if (isTransient) {
         const delay = INITIAL_DELAY * Math.pow(2, i);
         console.warn(`Attempt ${i + 1} failed with ${status || 'error'}. Retrying in ${delay}ms...`);
         await wait(delay);
@@ -79,7 +106,7 @@ async function retryOperation<T>(operation: () => Promise<T>): Promise<T> {
   throw lastError;
 }
 
-// Helper to encode/decode audio for Live API
+// ... existing base64/buffer helpers ...
 export function base64ToUint8Array(base64: string): Uint8Array {
   const binaryString = atob(base64);
   const len = binaryString.length;
@@ -109,8 +136,8 @@ export function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary);
 }
 
-// --- Text & Vision ---
 
+// --- Text & Vision --- (Unchanged)
 export async function generateTutorResponse(
   history: { role: string; parts: any[] }[],
   message: string,
@@ -189,8 +216,7 @@ export async function generateTutorResponse(
   });
 }
 
-// --- Quiz Generation ---
-
+// ... generateQuiz, generateMockExam, generateVocabularyBatch (Unchanged)
 export async function generateQuiz(topic: string, level: HSKLevel, lang: AppLanguage): Promise<QuizQuestion[]> {
   const ai = getAI();
   const model = 'gemini-3-flash-preview';
@@ -225,8 +251,6 @@ export async function generateQuiz(topic: string, level: HSKLevel, lang: AppLang
     return JSON.parse(response.text || '[]');
   });
 }
-
-// --- Exam Generation ---
 
 export async function generateMockExam(level: HSKLevel, lang: AppLanguage): Promise<ExamData> {
   const ai = getAI();
@@ -277,15 +301,13 @@ export async function generateMockExam(level: HSKLevel, lang: AppLanguage): Prom
   });
 }
 
-// --- Vocabulary Generation ---
-
 export async function generateVocabularyBatch(level: HSKLevel, lang: AppLanguage): Promise<VocabCard[]> {
   const ai = getAI();
   const model = 'gemini-3-flash-preview';
   
   const prompt = `Generate a list of 10 essential vocabulary words for ${level}.
   Translate definitions to ${LANG_NAMES[lang] || lang}.
-  Include a simple example sentence using the word.
+  Include Pinyin with accurate tone marks for every word and example sentence.
   Return strictly JSON.`;
 
   return retryOperation(async () => {
@@ -303,15 +325,45 @@ export async function generateVocabularyBatch(level: HSKLevel, lang: AppLanguage
               pinyin: { type: Type.STRING, description: 'Pinyin with tone marks' },
               translation: { type: Type.STRING, description: `Meaning in ${LANG_NAMES[lang]}` },
               exampleSentence: { type: Type.STRING, description: 'Chinese example sentence' },
+              examplePinyin: { type: Type.STRING, description: 'Pinyin for the example sentence with tone marks' },
               exampleTranslation: { type: Type.STRING, description: `Translation of example in ${LANG_NAMES[lang]}` }
             },
-            required: ['character', 'pinyin', 'translation', 'exampleSentence', 'exampleTranslation']
+            required: ['character', 'pinyin', 'translation', 'exampleSentence', 'examplePinyin', 'exampleTranslation']
           }
         }
       }
     });
 
     return JSON.parse(response.text || '[]');
+  });
+}
+
+export async function generatePracticeSentence(level: HSKLevel, lang: AppLanguage): Promise<{character: string, pinyin: string, translation: string}> {
+  const ai = getAI();
+  const model = 'gemini-3-flash-preview';
+  const prompt = `Generate one simple, natural Chinese sentence (5-10 chars) for HSK level ${level}.
+  Include Pinyin and translation in ${LANG_NAMES[lang] || lang}.
+  Return strictly JSON: { "character": "...", "pinyin": "...", "translation": "..." }`;
+
+  return retryOperation(async () => {
+    const response = await ai.models.generateContent({
+      model,
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            character: { type: Type.STRING },
+            pinyin: { type: Type.STRING },
+            translation: { type: Type.STRING }
+          },
+          required: ['character', 'pinyin', 'translation']
+        }
+      }
+    });
+
+    return JSON.parse(response.text || '{}');
   });
 }
 
@@ -338,26 +390,39 @@ export async function generateSpeech(text: string): Promise<ArrayBuffer> {
       throw new Error("Text is empty");
   }
 
-  // Improved cleaning to reduce safety trigger false positives
+  // Improved cleaning regex:
+  // - Includes CJK Unified Ideographs (\u4e00-\u9fa5)
+  // - Includes Cyrillic (\u0400-\u04FF) for Russian/Tajik
+  // - Includes Latin Extended (\u00C0-\u024F) and basic Latin for Pinyin with tones
+  // - Includes standard punctuation and digits
   const cleanText = text
       .replace(/https?:\/\/\S+/g, '') // Remove URLs
       .replace(/[*_`#\[\]()]/g, '')   // Remove Markdown chars
-      // Keep CJK characters, basic Latin, digits, and standard punctuation. 
-      // Remove others to avoid weird symbols triggering safety.
-      .replace(/[^\w\s\u4e00-\u9fa5.,?!:;'"-]/g, '') 
+      .replace(/[^\w\s\u4e00-\u9fa5\u0400-\u04FF\u00C0-\u024F.,?!:;'"-]/g, '') 
       .replace(/\s+/g, ' ')
       .trim()
       .substring(0, 300);
 
-  if (!cleanText) {
+  // Ensure it ends with punctuation to hint it's a sentence to read, not a prompt
+  const finalCleanText = cleanText.match(/[.?!。？！]$/) ? cleanText : `${cleanText}.`;
+
+  if (!finalCleanText || finalCleanText === '.') {
      throw new Error("Text contains only symbols or unsupported characters, cannot generate speech.");
   }
+
+  const safetySettings = [
+    { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+    { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+    { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+    { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+    { category: HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY, threshold: HarmBlockThreshold.BLOCK_NONE },
+  ];
 
   const generateWithConfig = async (voiceName: string) => {
     return retryOperation(async () => {
       return await ai.models.generateContent({
         model,
-        contents: [{ parts: [{ text: cleanText }] }],
+        contents: [{ parts: [{ text: finalCleanText }] }],
         config: {
           responseModalities: [Modality.AUDIO],
           speechConfig: { 
@@ -365,13 +430,7 @@ export async function generateSpeech(text: string): Promise<ArrayBuffer> {
               prebuiltVoiceConfig: { voiceName } 
             } 
           },
-          // Relax safety settings for TTS to prevent false positives on educational content
-          safetySettings: [
-            { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
-            { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
-            { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-            { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-          ],
+          safetySettings,
         },
       });
     });
@@ -382,6 +441,10 @@ export async function generateSpeech(text: string): Promise<ArrayBuffer> {
     try {
         response = await generateWithConfig('Kore');
     } catch (err: any) {
+        // If it's a 400 invalid argument or model confusion error, do not retry with another voice, just fail to fallback
+        if (err.message && (err.message.includes("Model tried to generate text") || err.message.includes("INVALID_ARGUMENT"))) {
+           throw err;
+        }
         console.warn("TTS Primary Voice Error, retrying with fallback:", err);
         response = await generateWithConfig('Puck');
     }
@@ -411,17 +474,16 @@ export async function generateSpeech(text: string): Promise<ArrayBuffer> {
     }
     return bytes.buffer;
   } catch (error: any) {
-    if (error.message?.includes('429') || error.status === 429) {
-         throw new Error("TTS Quota Exceeded. Please try again later.");
+    // Pass through detailed errors for the UI to handle fallback
+    // We log here only if it's NOT the expected hallucination error (to keep console clean)
+    if (!error.message?.includes("Model tried to generate text")) {
+        console.error("TTS Execution Error:", error);
     }
-    if (error.message?.includes('supported by the AudioOut model')) {
-         throw new Error("Text contains characters not supported by speech generation.");
-    }
-    console.error("TTS Execution Error:", error);
     throw error;
   }
 }
 
+// ... playRawAudio, speakBrowser, playTextToSpeech, generateVisualAid, transcribeAudio, evaluatePronunciation (Unchanged)
 export async function playRawAudio(buffer: ArrayBuffer): Promise<void> {
   stopTtsAudio(); // Stop any currently playing TTS
 
@@ -471,13 +533,14 @@ export async function playTextToSpeech(text: string): Promise<void> {
   try {
     const pcmBuffer = await generateSpeech(text);
     await playRawAudio(pcmBuffer);
-  } catch (e) {
-    console.warn("Gemini TTS failed, falling back to browser TTS", e);
+  } catch (e: any) {
+    // Reduce noise: only warn if it's NOT the known model quirk
+    if (!e.message?.includes("Model tried to generate text")) {
+        console.warn("Gemini TTS failed, falling back to browser TTS", e);
+    }
     speakBrowser(text);
   }
 }
-
-// --- Image Generation ---
 
 export async function generateVisualAid(prompt: string, aspectRatio: string = "1:1"): Promise<string | null> {
   const ai = getAI();
@@ -509,11 +572,8 @@ export async function generateVisualAid(prompt: string, aspectRatio: string = "1
   });
 }
 
-// --- Audio Transcription & Evaluation ---
-
 export async function transcribeAudio(audioBase64: string, mimeType: string = 'audio/wav'): Promise<string> {
   const ai = getAI();
-  // Changed model to gemini-3-flash-preview as native-audio model is for Live API only
   const model = 'gemini-3-flash-preview';
   
   return retryOperation(async () => {
@@ -537,7 +597,6 @@ export async function transcribeAudio(audioBase64: string, mimeType: string = 'a
 
 export async function evaluatePronunciation(audioBase64: string, mimeType: string, referenceText?: string, lang: AppLanguage = AppLanguage.EN): Promise<string> {
   const ai = getAI();
-  // Changed model to gemini-3-flash-preview as native-audio model is for Live API only
   const model = 'gemini-3-flash-preview';
   
   const prompt = `You are a strict Chinese Pronunciation Coach. 
@@ -591,6 +650,15 @@ export function connectLiveSession(
   User Language: ${LANG_NAMES[lang] || lang}.
   Engage in a simple conversation suitable for the HSK level. 
   Correct pronunciation or grammar gently if needed, but prioritize flow.`;
+
+  // Safety settings for Live API
+  const safetySettings = [
+    { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+    { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+    { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+    { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+    { category: HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY, threshold: HarmBlockThreshold.BLOCK_NONE },
+  ];
 
   return ai.live.connect({
     model: 'gemini-2.5-flash-native-audio-preview-12-2025',

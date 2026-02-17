@@ -8,7 +8,8 @@ export enum AppMode {
   VOCAB = 'vocab',
   BOOKMARKS = 'bookmarks',
   PROGRESS = 'progress',
-  PROFILE = 'profile'
+  PROFILE = 'profile',
+  VISUALS = 'visuals'
 }
 
 export enum HSKLevel {
@@ -62,6 +63,7 @@ export interface VocabCard {
   pinyin: string;
   translation: string;
   exampleSentence: string;
+  examplePinyin?: string; // Pinyin for the example sentence
   exampleTranslation: string;
   bookmarked?: boolean;
 }
@@ -84,6 +86,7 @@ export interface PronunciationAttempt {
   pinyin: string;
   score: number;
   feedback: string;
+  audio?: string; // Data URI of user recording
   timestamp: number;
 }
 

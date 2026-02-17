@@ -1,7 +1,11 @@
-import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut as firebaseSignOut } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
 
+import firebase from "firebase/compat/app";
+import "firebase/compat/auth";
+import "firebase/compat/firestore";
+import "firebase/compat/analytics";
+import { persistentLocalCache, persistentMultipleTabManager } from "firebase/firestore";
+
+// Your web app's Firebase configuration
 const firebaseConfig = {
   apiKey: "AIzaSyA6a-dg6TuGIiYgIX9HNBzFOuGUya8yy8c",
   authDomain: "chinese-ad-7e96a.firebaseapp.com",
@@ -13,34 +17,61 @@ const firebaseConfig = {
   measurementId: "G-BY2WM564FR"
 };
 
-const app = initializeApp(firebaseConfig);
+// Initialize Firebase
+// Check if already initialized to prevent errors in some environments
+if (!firebase.apps.length) {
+  firebase.initializeApp(firebaseConfig);
+}
+const app = firebase.app();
 
-export const auth = getAuth(app);
-export const db = getFirestore(app);
-export const googleProvider = new GoogleAuthProvider();
+// Initialize Analytics conditionally
+let analytics;
+if (typeof window !== 'undefined') {
+  try {
+    analytics = firebase.analytics();
+  } catch (e) {
+    console.warn("Analytics failed to load", e);
+  }
+}
 
-// Force account selection to allow users to switch accounts
-googleProvider.setCustomParameters({
-  prompt: 'select_account'
-});
+// Initialize Services
+export const auth = app.auth();
+export const db = app.firestore();
+export const googleProvider = new firebase.auth.GoogleAuthProvider();
 
-export const loginEmailPassword = async (email: string, pass: string) => {
-  return await signInWithEmailAndPassword(auth, email, pass);
-};
+// Enable Persistence
+// Replaces deprecated db.enablePersistence() with new cache settings
+try {
+  db.settings({
+    // @ts-ignore: Fix for type mismatch in compat mode while using modular cache types
+    // Add merge: true to prevent "overriding original host" warning
+    merge: true,
+    // @ts-ignore
+    localCache: persistentLocalCache({
+      tabManager: persistentMultipleTabManager()
+    })
+  });
+} catch (err) {
+  // If persistence fails (e.g. browser not supported or multiple tabs issue handled internally by tabManager), log it
+  console.debug("Firestore persistence configuration error:", err);
+}
 
-export const registerEmailPassword = async (email: string, pass: string) => {
-  return await createUserWithEmailAndPassword(auth, email, pass);
-};
-
+// Auth Helpers
 export const signInWithGoogle = async () => {
-  // We propagate the error so the UI can show specific messages (like unauthorized domain)
-  return await signInWithPopup(auth, googleProvider);
+  const result = await auth.signInWithPopup(googleProvider);
+  return result.user;
+};
+
+export const loginEmailPassword = async (email: string, password: string) => {
+  const result = await auth.signInWithEmailAndPassword(email, password);
+  return result.user;
+};
+
+export const registerEmailPassword = async (email: string, password: string) => {
+  const result = await auth.createUserWithEmailAndPassword(email, password);
+  return result.user;
 };
 
 export const logout = async () => {
-  try {
-    await firebaseSignOut(auth);
-  } catch (error) {
-    console.error("Error signing out", error);
-  }
+  await auth.signOut();
 };

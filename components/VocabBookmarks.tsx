@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { playTextToSpeech } from '../services/gemini';
 import { toggleVocabBookmark as toggleDbBookmark, getBookmarkedWords as fetchBookmarks } from '../services/db';
@@ -49,17 +50,21 @@ const VocabBookmarks: React.FC<Props> = ({ language, level }) => {
   };
 
   const handleRemoveBookmark = async () => {
+    if (!cards[currentIndex]) return;
     const currentCard = cards[currentIndex];
     await toggleDbBookmark(currentCard, level);
     
     // Refresh list locally
     const newCards = cards.filter((_, idx) => idx !== currentIndex);
-    setCards(newCards);
     
-    // Adjust index if needed
+    // Calculate new index before setting cards to avoid race condition where card is undefined in render
+    let newIndex = currentIndex;
     if (currentIndex >= newCards.length) {
-      setCurrentIndex(Math.max(0, newCards.length - 1));
+      newIndex = Math.max(0, newCards.length - 1);
     }
+    
+    setCurrentIndex(newIndex);
+    setCards(newCards);
     setIsFlipped(false);
   };
 
@@ -101,6 +106,9 @@ const VocabBookmarks: React.FC<Props> = ({ language, level }) => {
   }
 
   const card = cards[currentIndex];
+  
+  // Guard against render race conditions where card is undefined
+  if (!card) return null;
 
   return (
     <div className="h-full flex flex-col p-6 bg-gray-50 overflow-hidden">
@@ -154,6 +162,7 @@ const VocabBookmarks: React.FC<Props> = ({ language, level }) => {
                 
                 <div className="w-full bg-gray-50 p-4 rounded-xl text-left">
                   <p className="text-lg text-gray-800 mb-1">{card.exampleSentence}</p>
+                  {card.examplePinyin && <p className="text-md text-red-500 mb-1 font-medium">{card.examplePinyin}</p>}
                   <p className="text-sm text-gray-500 italic">{card.exampleTranslation}</p>
                 </div>
              </div>
