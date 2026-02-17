@@ -40,6 +40,7 @@ export const db = app.firestore();
 export const googleProvider = new firebase.auth.GoogleAuthProvider();
 
 // Enable Persistence safely
+// We wrap this in a way that doesn't block the main thread or crash the app
 if (typeof window !== 'undefined') {
   db.enablePersistence({ synchronizeTabs: true }).catch((err) => {
     if (err.code === 'failed-precondition') {
