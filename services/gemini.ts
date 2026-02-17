@@ -395,13 +395,14 @@ export async function generateSpeech(text: string): Promise<ArrayBuffer> {
   // - Includes Cyrillic (\u0400-\u04FF) for Russian/Tajik
   // - Includes Latin Extended (\u00C0-\u024F) and basic Latin for Pinyin with tones
   // - Includes standard punctuation and digits
+  // - Updated to support 4000 characters for full tutor explanations
   const cleanText = text
       .replace(/https?:\/\/\S+/g, '') // Remove URLs
-      .replace(/[*_`#\[\]()]/g, '')   // Remove Markdown chars
-      .replace(/[^\w\s\u4e00-\u9fa5\u0400-\u04FF\u00C0-\u024F.,?!:;'"-]/g, '') 
+      .replace(/[*_`#\[\]]/g, '')     // Remove Markdown chars (keep parens)
+      .replace(/[^\w\s\u4e00-\u9fa5\u0400-\u04FF\u00C0-\u024F.,?!:;'"()—\-]/g, '') 
       .replace(/\s+/g, ' ')
       .trim()
-      .substring(0, 300);
+      .substring(0, 4000);
 
   // Ensure it ends with punctuation to hint it's a sentence to read, not a prompt
   const finalCleanText = cleanText.match(/[.?!。？！]$/) ? cleanText : `${cleanText}.`;
