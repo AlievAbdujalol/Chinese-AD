@@ -1,9 +1,9 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { generateVocabularyBatch, playTextToSpeech, getFriendlyErrorMessage } from '../services/gemini';
-import { saveVocabProgress, toggleVocabBookmark } from '../services/db';
+import { saveVocabProgress, toggleVocabBookmark, saveVocabCustomImage } from '../services/db';
 import { AppLanguage, HSKLevel, VocabCard } from '../types';
-import { RefreshCw, Volume2, RotateCw, BookOpen, Check, ThumbsUp, AlertTriangle, Smile, Star, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import { RefreshCw, Volume2, RotateCw, BookOpen, Check, ThumbsUp, AlertTriangle, Smile, Star, AlertCircle, Eye, EyeOff, Camera, Upload, ImageIcon, ImagePlus } from 'lucide-react';
 import { translations } from '../utils/translations';
 import { getLevelTheme } from '../utils/theme';
 
@@ -20,7 +20,10 @@ const VocabReview: React.FC<Props> = ({ language, level }) => {
   const [loading, setLoading] = useState(false);
   const [completed, setCompleted] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [imageProcessing, setImageProcessing] = useState(false);
   
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const t = translations[language].vocab;
   const theme = getLevelTheme(level);
 
@@ -78,6 +81,37 @@ const VocabReview: React.FC<Props> = ({ language, level }) => {
     } catch (e) {
       console.error("Failed to toggle bookmark", e);
     }
+  };
+  
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file || !cards[currentIndex]) return;
+      
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+          const base64 = (reader.result as string).split(',')[1];
+          // Determine mime type from file or default to jpeg if simpler
+          const mimeType = file.type || 'image/jpeg';
+          const fullDataUrl = `data:${mimeType};base64,${base64}`;
+
+          setImageProcessing(true);
+          try {
+              // DIRECT SAVE - No AI Transformation
+              const updatedCards = [...cards];
+              updatedCards[currentIndex] = { ...updatedCards[currentIndex], customImage: fullDataUrl };
+              setCards(updatedCards);
+              
+              await saveVocabCustomImage(updatedCards[currentIndex], fullDataUrl);
+          } catch (err: any) {
+              console.error("Failed to save image", err);
+              setError("Failed to save photo. Please try again.");
+              setTimeout(() => setError(null), 3000);
+          } finally {
+              setImageProcessing(false);
+          }
+      };
+      reader.readAsDataURL(file);
+      e.target.value = ''; // Reset input
   };
 
   // Reset example visibility when flipping back to character
@@ -157,6 +191,12 @@ const VocabReview: React.FC<Props> = ({ language, level }) => {
          <span className="text-gray-500 font-bold">{currentIndex + 1} / {cards.length}</span>
          <span className={`px-3 py-1 rounded-full text-xs font-bold ${theme.badge}`}>{level}</span>
       </div>
+      
+      {error && (
+          <div className="max-w-xl mx-auto w-full mb-4 bg-red-50 text-red-600 p-3 rounded-xl text-sm text-center border border-red-100 animate-fade-in">
+              {error}
+          </div>
+      )}
 
       <div className="flex-1 flex flex-col items-center justify-center perspective-1000">
          <div 
@@ -166,28 +206,103 @@ const VocabReview: React.FC<Props> = ({ language, level }) => {
            <div className={`relative w-full h-full duration-500 preserve-3d transition-all transform ${isFlipped ? 'rotate-y-180' : ''}`} style={{ transformStyle: 'preserve-3d', transform: isFlipped ? 'rotateY(180deg)' : 'rotateY(0deg)' }}>
              
              {/* Front */}
-             <div className="absolute inset-0 backface-hidden bg-white rounded-3xl shadow-xl border border-gray-200 flex flex-col items-center justify-center p-8 text-center" style={{ backfaceVisibility: 'hidden' }}>
-                <div className="absolute top-4 left-4 z-50">
-                  <button 
-                    onClick={(e) => playAudio(card.character, e)} 
-                    className="p-3 bg-red-50 text-red-600 rounded-full hover:bg-red-100 transition-colors hover:scale-110 active:scale-90 shadow-sm"
-                  >
-                    <Volume2 size={24} />
-                  </button>
-                </div>
-                <div className="absolute top-4 right-4 z-50">
-                   <button 
-                     onClick={toggleBookmark}
-                     className={`p-3 rounded-full transition-colors ${card.bookmarked ? 'text-yellow-400 bg-yellow-50' : 'text-gray-300 hover:text-yellow-400'}`}
-                   >
-                     <Star size={24} fill={card.bookmarked ? "currentColor" : "none"} />
-                   </button>
-                </div>
+             <div 
+                className="absolute inset-0 backface-hidden bg-white rounded-3xl shadow-xl border border-gray-200 p-3" 
+                style={{ backfaceVisibility: 'hidden' }}
+             >
+                {/* Dashed Border Container inside the main card */}
+                <div className="w-full h-full border-2 border-dashed border-blue-400/50 rounded-2xl flex flex-col items-center justify-center relative overflow-hidden bg-blue-50/20">
+                    
+                    {/* Background Image Layer */}
+                    {card.customImage && (
+                        <div className="absolute inset-0 z-0">
+                            <img 
+                                src={card.customImage} 
+                                alt="User Upload" 
+                                className="w-full h-full object-cover"
+                            />
+                            <div className="absolute inset-0 bg-white/30"></div>
+                        </div>
+                    )}
+                    
+                    {/* Content Layer */}
+                    <div className="relative z-10 w-full h-full flex flex-col items-center justify-center p-6">
+                        {/* Top Left: Bookmark (Swapped) */}
+                        <div className="absolute top-4 left-4 z-50">
+                           <button 
+                             onClick={toggleBookmark}
+                             className={`p-3 rounded-full transition-colors ${card.bookmarked ? 'text-yellow-400 bg-yellow-50 shadow-sm' : 'text-gray-300 hover:text-yellow-400'}`}
+                           >
+                             <Star size={24} fill={card.bookmarked ? "currentColor" : "none"} />
+                           </button>
+                        </div>
 
-                <span className="text-gray-400 text-sm uppercase tracking-widest mb-4">Character</span>
-                <h2 className="text-8xl font-bold text-gray-800 mb-8">{card.character}</h2>
-                <div className="text-gray-400 text-sm mt-8 opacity-0 group-hover:opacity-100 transition-opacity flex items-center">
-                  <RotateCw size={14} className="mr-1" /> Tap to flip
+                        {/* Top Right: Audio (Swapped) */}
+                        <div className="absolute top-4 right-4 z-50">
+                          <button 
+                            onClick={(e) => playAudio(card.character, e)} 
+                            className="p-3 bg-white/90 text-red-600 rounded-full hover:bg-white transition-colors hover:scale-110 active:scale-90 shadow-sm backdrop-blur-sm border border-red-100"
+                          >
+                            <Volume2 size={24} />
+                          </button>
+                        </div>
+
+                        <span className="text-gray-500 text-sm uppercase tracking-widest mb-4 font-bold drop-shadow-sm">Character</span>
+                        <h2 className="text-8xl font-bold text-gray-800 mb-6 drop-shadow-sm">{card.character}</h2>
+                        
+                        {/* Example Sentence Toggle on Front */}
+                        <div className="w-full relative z-50 px-4 transition-all duration-300 min-h-[40px] flex justify-center">
+                            {showExample ? (
+                                <div className="w-full bg-white/95 backdrop-blur-md p-4 rounded-xl text-left animate-fade-in border border-gray-200 shadow-md">
+                                    <p className="text-lg text-gray-800 mb-1 leading-tight">{card.exampleSentence}</p>
+                                    {card.examplePinyin && <p className="text-md text-red-500 mb-1 font-medium">{card.examplePinyin}</p>}
+                                    <p className="text-sm text-gray-500 italic leading-tight">{card.exampleTranslation}</p>
+                                    <button 
+                                        onClick={(e) => { e.stopPropagation(); setShowExample(false); }}
+                                        className="mt-2 text-xs text-gray-400 hover:text-red-500 flex items-center"
+                                    >
+                                        <EyeOff size={12} className="mr-1" /> Hide example
+                                    </button>
+                                </div>
+                            ) : (
+                                <button 
+                                    onClick={(e) => { e.stopPropagation(); setShowExample(true); }}
+                                    className="py-2 px-4 rounded-full bg-white/80 text-gray-600 hover:bg-white transition-colors flex items-center text-sm font-medium border border-gray-200 shadow-sm backdrop-blur-sm"
+                                >
+                                    <Eye size={16} className="mr-2 text-blue-500" />
+                                    Show Example Sentence
+                                </button>
+                            )}
+                        </div>
+                        
+                        {/* Photo Upload Controls */}
+                        <div className="absolute bottom-4 left-0 right-0 flex justify-center pb-0 z-50">
+                             <input 
+                               type="file" 
+                               ref={fileInputRef} 
+                               className="hidden" 
+                               accept="image/*" 
+                               onChange={handlePhotoUpload} 
+                             />
+                             <button 
+                                onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
+                                disabled={imageProcessing}
+                                className="flex items-center space-x-2 bg-gray-100/90 text-gray-600 px-4 py-2 rounded-lg text-xs font-bold hover:bg-white hover:text-blue-600 backdrop-blur-sm transition-all border border-gray-200 shadow-sm"
+                             >
+                                {imageProcessing ? (
+                                    <>
+                                      <RefreshCw size={12} className="animate-spin" />
+                                      <span>Saving...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                      <ImagePlus size={14} />
+                                      <span>Upload Photo</span>
+                                    </>
+                                )}
+                             </button>
+                        </div>
+                    </div>
                 </div>
              </div>
 
@@ -214,7 +329,7 @@ const VocabReview: React.FC<Props> = ({ language, level }) => {
                 <h3 className="text-3xl font-bold text-red-600 mb-2">{card.pinyin}</h3>
                 <p className="text-xl text-gray-800 font-medium mb-4">{card.translation}</p>
                 
-                <div className="w-full transition-all duration-300">
+                <div className="w-full transition-all duration-300 relative z-50">
                   {showExample ? (
                     <div className="w-full bg-gray-50 p-4 rounded-xl text-left animate-fade-in border border-gray-100">
                       <p className="text-lg text-gray-800 mb-1 leading-tight">{card.exampleSentence}</p>

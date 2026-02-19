@@ -66,6 +66,7 @@ export interface VocabCard {
   examplePinyin?: string; // Pinyin for the example sentence
   exampleTranslation: string;
   bookmarked?: boolean;
+  customImage?: string; // User uploaded/generated Beijing photo
 }
 
 export interface QuizResult {

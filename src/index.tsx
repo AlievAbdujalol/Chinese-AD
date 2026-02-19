@@ -1,24 +1,26 @@
-
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 
-// Debug log to confirm script execution in console
-console.log('App starting...');
+// Debug logs to confirm script is executing
+console.log('Starting app mount...');
 
 const rootElement = document.getElementById('root');
 
 if (!rootElement) {
-  console.error('Failed to find the root element');
-  throw new Error("Could not find root element to mount to");
+  const msg = "FATAL: Could not find root element with id 'root' in index.html";
+  console.error(msg);
+  throw new Error(msg);
 }
 
-const root = ReactDOM.createRoot(rootElement);
-
-root.render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-);
-
-console.log('App mounted.');
+try {
+  const root = ReactDOM.createRoot(rootElement);
+  root.render(
+    <React.StrictMode>
+      <App />
+    </React.StrictMode>
+  );
+  console.log('App mounted successfully.');
+} catch (error) {
+  console.error('Error during app mounting:', error);
+}

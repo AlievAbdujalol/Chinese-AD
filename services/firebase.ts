@@ -17,14 +17,13 @@ const firebaseConfig = {
 };
 
 // Initialize Firebase
-// Ensure we don't initialize twice, which can crash HMR or re-renders
 if (!firebase.apps.length) {
   firebase.initializeApp(firebaseConfig);
 }
 
 const app = firebase.app();
 
-// Initialize Analytics conditionally (only in browser environment)
+// Initialize Analytics conditionally
 let analytics;
 if (typeof window !== 'undefined') {
   try {
@@ -40,17 +39,28 @@ export const db = app.firestore();
 export const googleProvider = new firebase.auth.GoogleAuthProvider();
 
 // Enable Persistence safely
-// We wrap this in a way that doesn't block the main thread or crash the app
+// We handle the 'unimplemented' and 'failed-precondition' errors that frequently occur
+// in dev environments or when multiple tabs are open.
 if (typeof window !== 'undefined') {
-  db.enablePersistence({ synchronizeTabs: true }).catch((err) => {
-    if (err.code === 'failed-precondition') {
-       // Multiple tabs open, persistence can only be enabled in one tab at a time.
-       console.warn('Firestore persistence failed: Multiple tabs open');
-    } else if (err.code === 'unimplemented') {
-       // The current browser does not support all of the features required to enable persistence
-       console.warn('Firestore persistence not supported by browser');
-    }
-  });
+  try {
+    // Note: Google recently deprecated enableMultiTabIndexedDbPersistence in favor of new cache settings,
+    // but for firebase/compat, enablePersistence is still the standard entry point. 
+    // We catch errors to ensure the app UI doesn't crash even if persistence fails.
+    db.enablePersistence({ synchronizeTabs: true }).catch((err) => {
+      if (err.code === 'failed-precondition') {
+          // Multiple tabs open, persistence can only be enabled in one tab at a time.
+          console.warn('Firestore persistence enabled in another tab');
+      } else if (err.code === 'unimplemented') {
+          // The current browser does not support all of the features required to enable persistence
+          console.warn('Firestore persistence not supported');
+      } else {
+          // Swallow other warnings to keep console clean (including deprecation warnings if they come as errors)
+          console.debug('Firestore persistence warning:', err);
+      }
+    });
+  } catch (e) {
+    console.warn("Firestore persistence init error", e);
+  }
 }
 
 // Auth Helpers

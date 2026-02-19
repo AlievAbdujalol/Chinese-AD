@@ -28,6 +28,7 @@ interface HSKTutorDB extends DBSchema {
       level: HSKLevel;
       rating?: 'hard' | 'good' | 'easy';
       bookmarked?: boolean;
+      customImage?: string; // Stored user image
       lastReviewed: number;
     };
   };
@@ -200,8 +201,61 @@ export const getRecentResults = async () => {
 
 // --- Vocabulary API ---
 
+export const saveVocabCustomImage = async (card: VocabCard, imageBase64: string) => {
+  const user = getUser();
+  const dataToMerge = { customImage: imageBase64 };
+
+  let savedToCloud = false;
+
+  if (user && !cloudDisabled) {
+    try {
+      const docRef = db.collection('users').doc(user.uid).collection('vocabulary').doc(card.character);
+      await withTimeout(docRef.set(dataToMerge, { merge: true }));
+      savedToCloud = true;
+    } catch (e) {
+      handleCloudError(e, 'saveVocabCustomImage');
+    }
+  }
+
+  // Local
+  try {
+    const localDb = await initDB();
+    const tx = localDb.transaction('vocabulary', 'readwrite');
+    const store = tx.objectStore('vocabulary');
+    const existing = await store.get(card.character);
+    
+    // We must reconstruct the full object for IndexedDB put
+    const merged = {
+       ...card,
+       ...(existing || {}),
+       customImage: imageBase64
+    };
+    
+    await store.put(merged);
+    await tx.done;
+  } catch (e) {
+    console.error("Failed to save custom image locally", e);
+  }
+};
+
 export const saveVocabProgress = async (card: VocabCard, level: HSKLevel, rating: 'hard' | 'good' | 'easy') => {
   const user = getUser();
+  // We need to fetch existing first to ensure we don't overwrite customImage or bookmarks if they aren't in `card`
+  let existingCustomImage = card.customImage;
+  let existingBookmarked = card.bookmarked;
+
+  // Optimistic local check for existing data if card prop is missing it
+  if (!existingCustomImage || existingBookmarked === undefined) {
+      try {
+          const localDb = await initDB();
+          const localExisting = await localDb.get('vocabulary', card.character);
+          if (localExisting) {
+              if (!existingCustomImage) existingCustomImage = localExisting.customImage;
+              if (existingBookmarked === undefined) existingBookmarked = localExisting.bookmarked;
+          }
+      } catch(e) {}
+  }
+
   const vocabData = {
     character: card.character,
     pinyin: card.pinyin,
@@ -211,6 +265,8 @@ export const saveVocabProgress = async (card: VocabCard, level: HSKLevel, rating
     exampleTranslation: card.exampleTranslation,
     level,
     rating,
+    bookmarked: existingBookmarked || false,
+    customImage: existingCustomImage, // Preserve image
     lastReviewed: Date.now(),
   };
 
@@ -231,15 +287,7 @@ export const saveVocabProgress = async (card: VocabCard, level: HSKLevel, rating
     // LOCAL
     try {
       const localDb = await initDB();
-      const tx = localDb.transaction('vocabulary', 'readwrite');
-      const store = tx.objectStore('vocabulary');
-      const existing = await store.get(card.character);
-      
-      await store.put({
-        ...vocabData,
-        bookmarked: existing?.bookmarked || false,
-      });
-      await tx.done;
+      await localDb.put('vocabulary', vocabData);
     } catch (e) {
       console.error("Failed to save vocab locally:", e);
     }
@@ -294,6 +342,7 @@ export const toggleVocabBookmark = async (card: VocabCard, level: HSKLevel) => {
         level,
         rating: existing?.rating,
         bookmarked: newBookmarkState,
+        customImage: existing?.customImage, // Preserve image
         lastReviewed: Date.now(),
       });
       await tx.done;
@@ -334,7 +383,8 @@ export const getBookmarkedWords = async (level: HSKLevel): Promise<VocabCard[]> 
         exampleSentence: v.exampleSentence,
         examplePinyin: v.examplePinyin,
         exampleTranslation: v.exampleTranslation,
-        bookmarked: true
+        bookmarked: true,
+        customImage: v.customImage
       }));
   } catch (e) {
     console.error("Failed to fetch local bookmarks:", e);

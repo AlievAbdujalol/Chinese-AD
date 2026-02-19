@@ -118,7 +118,13 @@ export const translations = {
       ratioLabel: 'Aspect Ratio',
       generate: 'Generate Image',
       download: 'Download Visual Aid',
-      dreaming: 'Generating...'
+      dreaming: 'Generating...',
+      uploadLabel: 'Reference Image (Optional)',
+      templates: 'Templates',
+      style: 'Styles',
+      learning: 'Learning',
+      saved: 'Saved',
+      savePrompt: 'Save Prompt'
     },
     vocab: {
       title: 'Vocabulary Flashcards',
@@ -253,7 +259,13 @@ export const translations = {
       ratioLabel: 'Соотношение сторон',
       generate: 'Создать',
       download: 'Скачать',
-      dreaming: 'Генерация...'
+      dreaming: 'Генерация...',
+      uploadLabel: 'Загрузить фото (необязательно)',
+      templates: 'Шаблоны',
+      style: 'Стили',
+      learning: 'Обучение',
+      saved: 'Мои',
+      savePrompt: 'Сохранить промпт'
     },
     vocab: {
       title: 'Флэш-карточки',
@@ -389,6 +401,12 @@ export const translations = {
       generate: 'Сохтан',
       download: 'Боргирӣ',
       dreaming: 'Сохтан...',
+      uploadLabel: 'Боргирии расм (ихтиёрӣ)',
+      templates: 'Намунаҳо',
+      style: 'Услубҳо',
+      learning: 'Омӯзиш',
+      saved: 'Захирашуда',
+      savePrompt: 'Захираи промпт'
     },
     vocab: {
       title: 'Флэш-кортҳо',

@@ -451,7 +451,9 @@ export async function generateSpeech(text: string): Promise<ArrayBuffer> {
     
     if (candidate.finishReason !== 'STOP' && candidate.finishReason !== undefined) { 
          if (candidate.finishReason === 'OTHER' || candidate.finishReason === 'SAFETY') {
-             console.warn("TTS Blocked/Failed with reason:", candidate.finishReason);
+             // Suppress console.warn for safety blocks to allow silent fallback
+             const msg = `TTS Blocked/Failed with reason: ${candidate.finishReason}`;
+             console.debug(msg);
              throw new Error("Speech generation blocked by safety or content filters.");
          }
     }
@@ -469,7 +471,9 @@ export async function generateSpeech(text: string): Promise<ArrayBuffer> {
     }
     return bytes.buffer;
   } catch (error: any) {
-    if (!error.message?.includes("Model tried to generate text")) {
+    // Only log critical/unknown errors. Safety/Content errors should bubble up for fallback handling.
+    const errMsg = error?.message || '';
+    if (!errMsg.includes("Model tried to generate text") && !errMsg.includes("safety") && !errMsg.includes("blocked")) {
         console.error("TTS Execution Error:", error);
     }
     throw error;
@@ -527,23 +531,35 @@ export async function playTextToSpeech(text: string): Promise<void> {
     const pcmBuffer = await generateSpeech(text);
     await playRawAudio(pcmBuffer);
   } catch (e: any) {
-    // Reduce noise: only warn if it's NOT the known model quirk
-    if (!e.message?.includes("Model tried to generate text")) {
+    // Reduce noise: only warn if it's NOT the known model quirk or safety block
+    const errMsg = e.message || '';
+    if (!errMsg.includes("Model tried to generate text") && !errMsg.includes("safety") && !errMsg.includes("blocked")) {
         console.warn("Gemini TTS failed, falling back to browser TTS", e);
     }
     speakBrowser(text);
   }
 }
 
-export async function generateVisualAid(prompt: string, aspectRatio: string = "1:1"): Promise<string | null> {
+export async function generateVisualAid(prompt: string, aspectRatio: string = "1:1", referenceImageBase64?: string): Promise<string | null> {
   const ai = getAI();
+  // Using gemini-3-pro-image-preview for high quality generation/editing
   const model = 'gemini-3-pro-image-preview';
   
+  const parts: any[] = [{ text: prompt }];
+  if (referenceImageBase64) {
+      parts.unshift({
+          inlineData: {
+              data: referenceImageBase64,
+              mimeType: 'image/jpeg'
+          }
+      });
+  }
+
   return retryOperation(async () => {
     try {
       const response = await ai.models.generateContent({
         model,
-        contents: { parts: [{ text: prompt }] },
+        contents: { parts },
         config: {
           imageConfig: {
             aspectRatio: aspectRatio as any, 
@@ -561,6 +577,59 @@ export async function generateVisualAid(prompt: string, aspectRatio: string = "1
     } catch (e) {
       console.error("Image Gen Error", e);
       throw e; 
+    }
+  });
+}
+
+// Function to generate Beijing-themed photos from user uploads
+export async function transformImageToBeijing(imageBase64: string): Promise<string> {
+  const ai = getAI();
+  // Using gemini-3-pro-image-preview for better reliability with image edits and prompt adherence
+  const model = 'gemini-3-pro-image-preview';
+  
+  const prompt = `Generate a realistic photo of this person visiting a famous landmark in Beijing, China (like the Forbidden City, Summer Palace, or Great Wall). 
+  The person from the input image should be integrated naturally into the Beijing scene. 
+  Ensure high quality, realistic travel photography style.`;
+
+  return retryOperation(async () => {
+    try {
+      const response = await ai.models.generateContent({
+        model,
+        contents: {
+          parts: [
+            {
+              inlineData: {
+                data: imageBase64,
+                mimeType: 'image/jpeg' 
+              }
+            },
+            { text: prompt }
+          ]
+        },
+        config: {
+          imageConfig: {
+            aspectRatio: "1:1",
+            imageSize: "1K"
+          }
+        }
+      });
+
+      for (const part of response.candidates?.[0]?.content?.parts || []) {
+        if (part.inlineData) {
+          return `data:image/png;base64,${part.inlineData.data}`;
+        }
+      }
+      
+      // If no image, check for text refusal to provide better error
+      const textPart = response.candidates?.[0]?.content?.parts?.find(p => p.text)?.text;
+      if (textPart) {
+          throw new Error(`Model refused: ${textPart}`);
+      }
+      
+      throw new Error("No image generated");
+    } catch (e) {
+      console.error("Beijing Transform Error", e);
+      throw e;
     }
   });
 }
