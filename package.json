@@ -5,18 +5,21 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "tsc && vite build",
+    "lint": "tsc --noEmit",
     "preview": "vite preview"
   },
   "dependencies": {
-    "react-dom": "^19.2.4",
-    "idb": "^8.0.3",
     "@google/genai": "^1.42.0",
-    "react": "^19.2.4",
+    "@tailwindcss/vite": "^4.2.0",
     "firebase": "^12.9.0",
-    "recharts": "^3.7.0",
+    "idb": "^8.0.3",
     "lucide-react": "^0.574.0",
-    "react-markdown": "^10.1.0"
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-markdown": "^10.1.0",
+    "recharts": "^3.7.0",
+    "tailwindcss": "^4.2.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

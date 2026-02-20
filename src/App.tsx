@@ -25,6 +25,7 @@ const LANGUAGE_LABELS: Record<AppLanguage, string> = {
 };
 
 const App: React.FC = () => {
+  console.log('App component rendering...');
   const [mode, setMode] = useState<AppMode>(AppMode.DASHBOARD);
   const [language, setLanguage] = useState<AppLanguage>(AppLanguage.EN);
   const [level, setLevel] = useState<HSKLevel>(HSKLevel.HSK1);

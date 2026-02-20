@@ -101,7 +101,7 @@ const VocabReview: React.FC<Props> = ({ language, level }) => {
               updatedCards[currentIndex] = { ...updatedCards[currentIndex], customImage: fullDataUrl };
               setCards(updatedCards);
               
-              await saveVocabCustomImage(updatedCards[currentIndex], fullDataUrl);
+              await saveVocabCustomImage(updatedCards[currentIndex], fullDataUrl, level);
           } catch (err: any) {
               console.error("Failed to save image", err);
               setError("Failed to save photo. Please try again.");
