@@ -43,10 +43,10 @@ export const googleProvider = new firebase.auth.GoogleAuthProvider();
 // in dev environments or when multiple tabs are open.
 if (typeof window !== 'undefined') {
   try {
-    // Note: Google recently deprecated enableMultiTabIndexedDbPersistence in favor of new cache settings.
-    // We'll try to enable persistence without specific tab synchronization options to avoid the warning,
-    // or just accept that it might be single-tab.
-    db.enablePersistence().catch((err) => {
+    // Note: Google recently deprecated enableMultiTabIndexedDbPersistence in favor of new cache settings,
+    // but for firebase/compat, enablePersistence is still the standard entry point. 
+    // We catch errors to ensure the app UI doesn't crash even if persistence fails.
+    db.enablePersistence({ synchronizeTabs: true }).catch((err) => {
       if (err.code === 'failed-precondition') {
           // Multiple tabs open, persistence can only be enabled in one tab at a time.
           console.warn('Firestore persistence enabled in another tab');

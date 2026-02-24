@@ -203,7 +203,7 @@ export const getRecentResults = async () => {
 
 export const saveVocabCustomImage = async (card: VocabCard, imageBase64: string, level: HSKLevel) => {
   const user = getUser();
-  const dataToMerge = { customImage: imageBase64, level }; // Ensure level is saved if new
+  const dataToMerge = { customImage: imageBase64, level };
 
   let savedToCloud = false;
 
@@ -226,11 +226,11 @@ export const saveVocabCustomImage = async (card: VocabCard, imageBase64: string,
     
     // We must reconstruct the full object for IndexedDB put
     const merged = {
-       level, // Default level if new
+       level,
        ...card,
        ...(existing || {}),
        customImage: imageBase64,
-       lastReviewed: existing?.lastReviewed || Date.now() // Ensure lastReviewed exists
+       lastReviewed: existing?.lastReviewed || Date.now()
     };
     
     await store.put(merged);

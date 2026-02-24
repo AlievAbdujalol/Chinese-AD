@@ -74,7 +74,7 @@ const ChineseWord: React.FC<{ text: string }> = ({ text }) => {
       >
         {text}
       </span>
-      <div className="flex items-center ml-1 space-x-0.5">
+      <span className="flex items-center ml-1 space-x-0.5">
           <button 
             onClick={play}
             className={`p-1 rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-700 transition-colors ${loadingAudio ? 'opacity-100' : 'opacity-40 group-hover:opacity-100'}`}
@@ -104,23 +104,25 @@ const ChineseWord: React.FC<{ text: string }> = ({ text }) => {
           >
              <History size={12} />
           </button>
-      </div>
+      </span>
 
       {hasFeedback && (
-        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 z-[60] animate-fade-in pointer-events-auto">
-            <div className="bg-white rounded-xl shadow-2xl border border-blue-100 p-4 relative">
+        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 z-[60] animate-fade-in pointer-events-auto block">
+            <span className="bg-white rounded-xl shadow-2xl border border-blue-100 p-4 relative block">
                 <button 
                     onClick={(e) => { e.stopPropagation(); setEvaluationResult(null); }}
                     className="absolute top-2 right-2 text-gray-400 hover:text-gray-600"
                 >
                     <X size={14} />
                 </button>
-                <div className="prose prose-sm text-gray-800">
-                    <ReactMarkdown>{evaluationResult.feedback}</ReactMarkdown>
-                </div>
-                <div className="absolute top-full left-1/2 -translate-x-1/2 w-3 h-3 bg-white border-b border-r border-blue-100 rotate-45 -mt-1.5"></div>
-            </div>
-        </div>
+                <span className="prose prose-sm text-gray-800 block">
+                    <ReactMarkdown components={{
+                        p: ({node, ...props}) => <span className="block mb-2" {...props} />
+                    }}>{evaluationResult.feedback}</ReactMarkdown>
+                </span>
+                <span className="absolute top-full left-1/2 -translate-x-1/2 w-3 h-3 bg-white border-b border-r border-blue-100 rotate-45 -mt-1.5 block"></span>
+            </span>
+        </span>
       )}
     </span>
   );
@@ -745,8 +747,20 @@ const TextTutor: React.FC<Props> = ({ language, level, initialTutorMode, onTutor
                 Flashcards
               </button>
           </div>
-          <div className="text-xs font-bold text-gray-400 uppercase tracking-wider hidden sm:block">
-              {tutorMode === 'chat' ? 'AI Tutor' : 'Vocab Review'}
+          
+          <div className="flex items-center space-x-2">
+              {tutorMode === 'chat' && messages.length > 0 && (
+                  <button 
+                    onClick={handleClearHistory}
+                    className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"
+                    title="Clear Chat History"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+              )}
+              <div className="text-xs font-bold text-gray-400 uppercase tracking-wider hidden sm:block">
+                  {tutorMode === 'chat' ? 'AI Tutor' : 'Vocab Review'}
+              </div>
           </div>
       </div>
 
@@ -777,12 +791,19 @@ const TextTutor: React.FC<Props> = ({ language, level, initialTutorMode, onTutor
                 {msg.role === 'model' && (
                     <div className="flex items-center space-x-2 mt-2 flex-wrap">
                     <button 
-                        onClick={() => handleAudioPlay(msg.text, msg.id)}
+                        onClick={() => {
+                            // Strip Chinese characters and punctuation so the TTS reads the explanation smoothly
+                            const textToPlay = msg.text.replace(/[\u4e00-\u9fa5，。！？、；：“”‘’（）《》【】]+/g, ' ').trim();
+                            if (textToPlay) {
+                                handleAudioPlay(textToPlay, msg.id);
+                            }
+                        }}
                         className={`p-1.5 rounded-full transition-colors flex items-center ${
                         playingMsgId === msg.id 
                             ? 'bg-red-100 text-red-600 cursor-wait' 
                             : 'bg-gray-50 hover:bg-gray-100 text-gray-600 border border-gray-200'
                         }`}
+                        title="Read explanation (without Chinese characters)"
                     >
                         {playingMsgId === msg.id ? (
                         <RefreshCw size={16} className="animate-spin" />

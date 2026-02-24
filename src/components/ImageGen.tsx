@@ -89,10 +89,14 @@ const ImageGen: React.FC<Props> = ({ language = AppLanguage.EN }) => {
       const result = await generateVisualAid(prompt, aspectRatio, imageBase64);
       setImage(result);
     } catch (e: any) {
-      if (e.toString().includes("403") || e.toString().includes("PERMISSION_DENIED")) {
+      if (e.toString().includes("403") || e.toString().includes("PERMISSION_DENIED") || e.toString().includes("The caller does not have permission")) {
          setError("Please select a paid API Key project to use high-quality image generation.");
          if ((window as any).aistudio) {
-            (window as any).aistudio.openSelectKey();
+            try {
+                (window as any).aistudio.openSelectKey();
+            } catch (err) {
+                console.warn("Failed to open key selector", err);
+            }
          }
       } else {
          setError(getFriendlyErrorMessage(e));

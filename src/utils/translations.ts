@@ -140,7 +140,10 @@ export const translations = {
       complete: 'Set Complete!',
       play: 'Pronounce',
       noBookmarks: 'No bookmarked words found for this level. Star words in the Vocabulary section to save them here.',
-      removeBookmark: 'Remove Bookmark'
+      removeBookmark: 'Remove Bookmark',
+      fix: 'Fix',
+      next: 'Next',
+      prev: 'Previous'
     }
   },
   [AppLanguage.RU]: {
@@ -281,7 +284,10 @@ export const translations = {
       complete: 'Набор завершен!',
       play: 'Произнести',
       noBookmarks: 'Нет закладок для этого уровня. Отмечайте слова звездочкой в Словаре, чтобы сохранить их здесь.',
-      removeBookmark: 'Убрать из закладок'
+      removeBookmark: 'Убрать из закладок',
+      fix: 'Исправить',
+      next: 'Далее',
+      prev: 'Назад'
     }
   },
   [AppLanguage.TJ]: {
@@ -422,7 +428,10 @@ export const translations = {
       complete: 'Маҷмӯа анҷом ёфт!',
       play: 'Талаффуз',
       noBookmarks: 'Дар ин сатҳ калимаи захирашуда нест. Дар Луғат калимаҳоро бо ситорача қайд кунед.',
-      removeBookmark: 'Тоза кардани захира'
+      removeBookmark: 'Тоза кардани захира',
+      fix: 'Ислоҳ',
+      next: 'Баъдӣ',
+      prev: 'Қаблӣ'
     }
   }
 };

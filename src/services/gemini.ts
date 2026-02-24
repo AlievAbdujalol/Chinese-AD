@@ -40,7 +40,7 @@ export function getFriendlyErrorMessage(error: any): string {
   if (msg.includes('400') || msg.includes('INVALID_ARGUMENT')) {
       if (msg.includes('symbol') || msg.includes('supported')) return "Text contains only symbols or unsupported characters.";
       if (msg.includes('text') && msg.includes('TTS')) return "TTS Generation failed. Switching to browser voice.";
-      if (msg.includes('Model tried to generate text')) return "TTS Model Error. Switching to browser voice.";
+      if (msg.includes('Model tried to generate text') || msg.includes('non-audio response')) return "TTS Model Error. Switching to browser voice.";
       return "The request was invalid. Please try a different prompt.";
   }
   
@@ -473,7 +473,10 @@ export async function generateSpeech(text: string): Promise<ArrayBuffer> {
   } catch (error: any) {
     // Only log critical/unknown errors. Safety/Content errors should bubble up for fallback handling.
     const errMsg = error?.message || '';
-    if (!errMsg.includes("Model tried to generate text") && !errMsg.includes("safety") && !errMsg.includes("blocked")) {
+    if (!errMsg.includes("Model tried to generate text") && 
+        !errMsg.includes("safety") && 
+        !errMsg.includes("blocked") &&
+        !errMsg.includes("non-audio response")) {
         console.error("TTS Execution Error:", error);
     }
     throw error;
@@ -533,7 +536,10 @@ export async function playTextToSpeech(text: string): Promise<void> {
   } catch (e: any) {
     // Reduce noise: only warn if it's NOT the known model quirk or safety block
     const errMsg = e.message || '';
-    if (!errMsg.includes("Model tried to generate text") && !errMsg.includes("safety") && !errMsg.includes("blocked")) {
+    if (!errMsg.includes("Model tried to generate text") && 
+        !errMsg.includes("safety") && 
+        !errMsg.includes("blocked") &&
+        !errMsg.includes("non-audio response")) {
         console.warn("Gemini TTS failed, falling back to browser TTS", e);
     }
     speakBrowser(text);

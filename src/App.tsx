@@ -153,34 +153,37 @@ const App: React.FC = () => {
   // Render active component
   const renderContent = () => {
     // We pass user or key props to force re-render when user logs in/out
-    const commonProps = { level, language, key: activeUser ? activeUser.uid : 'guest' };
+    const commonProps = { level, language };
+    const userKey = activeUser ? activeUser.uid : 'guest';
 
     switch (mode) {
       case AppMode.DASHBOARD:
-        return <Dashboard {...commonProps} />;
+        return <Dashboard key={userKey} {...commonProps} />;
       case AppMode.TUTOR:
         return (
           <TextTutor 
+            key={userKey}
             {...commonProps} 
             initialTutorMode={tutorSubMode}
             onTutorModeChange={handleTutorModeChange}
           />
         );
       case AppMode.LIVE:
-        return <LiveTutor {...commonProps} />;
+        return <LiveTutor key={userKey} {...commonProps} />;
       case AppMode.QUIZ:
-        return <QuizMode {...commonProps} />;
+        return <QuizMode key={userKey} {...commonProps} />;
       case AppMode.EXAM:
-        return <ExamMode {...commonProps} />;
+        return <ExamMode key={userKey} {...commonProps} />;
       case AppMode.VOCAB:
-        return <VocabReview {...commonProps} />;
+        return <VocabReview key={userKey} {...commonProps} />;
       case AppMode.VISUALS:
-        return <ImageGen language={language} />;
+        return <ImageGen key={userKey} language={language} />;
       case AppMode.BOOKMARKS:
-        return <VocabBookmarks {...commonProps} />;
+        return <VocabBookmarks key={userKey} {...commonProps} />;
       case AppMode.PROFILE:
         return (
           <Profile 
+             key={userKey}
              user={activeUser!} 
              language={language} 
              level={level} 
@@ -189,7 +192,7 @@ const App: React.FC = () => {
           />
         );
       default:
-        return <Dashboard {...commonProps} />;
+        return <Dashboard key={userKey} {...commonProps} />;
     }
   };
 
@@ -207,31 +210,15 @@ const App: React.FC = () => {
 
   return (
     <div className="flex h-screen bg-white text-gray-900 font-sans overflow-hidden">
-      {/* Sidebar - Desktop */}
-      <div className="hidden md:block h-full shadow-xl z-20">
-        <Navigation 
-          currentMode={mode} 
-          setMode={setMode} 
-          isMobile={false} 
-          language={language}
-          user={activeUser} 
-        />
-      </div>
-
-      {/* Sidebar - Mobile Overlay */}
-      {sidebarOpen && (
-        <div className="fixed inset-0 z-50 bg-black bg-opacity-50 md:hidden" onClick={() => setSidebarOpen(false)}>
-          <div className="bg-white w-64 h-full shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <Navigation 
-              currentMode={mode} 
-              setMode={(m) => { setMode(m); setSidebarOpen(false); }} 
-              isMobile={false} 
-              language={language}
-              user={activeUser}
-            />
-          </div>
-        </div>
-      )}
+      {/* Navigation Component (Handles Desktop Sidebar & Mobile Drawer) */}
+      <Navigation 
+        currentMode={mode} 
+        setMode={setMode} 
+        language={language}
+        user={activeUser} 
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+      />
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col h-full overflow-hidden relative">

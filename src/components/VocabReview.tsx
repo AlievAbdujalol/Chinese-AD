@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { generateVocabularyBatch, playTextToSpeech, getFriendlyErrorMessage } from '../services/gemini';
 import { saveVocabProgress, toggleVocabBookmark, saveVocabCustomImage } from '../services/db';
 import { AppLanguage, HSKLevel, VocabCard } from '../types';
-import { RefreshCw, Volume2, RotateCw, BookOpen, Check, ThumbsUp, AlertTriangle, Smile, Star, AlertCircle, Eye, EyeOff, Camera, Upload, ImageIcon, ImagePlus } from 'lucide-react';
+import { RefreshCw, Volume2, RotateCw, BookOpen, Check, ThumbsUp, AlertTriangle, Smile, Star, AlertCircle, Eye, EyeOff, Camera, Upload, ImageIcon, ImagePlus, Wrench, ArrowLeft, ArrowRight } from 'lucide-react';
 import { translations } from '../utils/translations';
 import { getLevelTheme } from '../utils/theme';
 
@@ -66,6 +66,22 @@ const VocabReview: React.FC<Props> = ({ language, level }) => {
       setTimeout(() => setCurrentIndex(c => c + 1), 150);
     } else {
       setCompleted(true);
+    }
+  };
+
+  const handleNext = () => {
+    if (currentIndex < cards.length - 1) {
+      setIsFlipped(false);
+      setShowExample(false);
+      setTimeout(() => setCurrentIndex(c => c + 1), 150);
+    }
+  };
+
+  const handlePrev = () => {
+    if (currentIndex > 0) {
+      setIsFlipped(false);
+      setShowExample(false);
+      setTimeout(() => setCurrentIndex(c => c - 1), 150);
     }
   };
 
@@ -198,7 +214,24 @@ const VocabReview: React.FC<Props> = ({ language, level }) => {
           </div>
       )}
 
-      <div className="flex-1 flex flex-col items-center justify-center perspective-1000">
+      <div className="flex-1 flex flex-col items-center justify-center perspective-1000 relative">
+         {/* Navigation Buttons - Desktop: Side, Mobile: Bottom Overlay or Side if space */}
+         <button 
+            onClick={handlePrev} 
+            disabled={currentIndex === 0}
+            className={`absolute left-0 top-1/2 -translate-y-1/2 z-40 p-3 rounded-full bg-white/80 shadow-md backdrop-blur-sm border border-gray-100 transition-all ${currentIndex === 0 ? 'opacity-0 pointer-events-none' : 'opacity-100 hover:bg-white hover:scale-110 text-gray-600'}`}
+         >
+            <ArrowLeft size={24} />
+         </button>
+
+         <button 
+            onClick={handleNext} 
+            disabled={currentIndex === cards.length - 1}
+            className={`absolute right-0 top-1/2 -translate-y-1/2 z-40 p-3 rounded-full bg-white/80 shadow-md backdrop-blur-sm border border-gray-100 transition-all ${currentIndex === cards.length - 1 ? 'opacity-0 pointer-events-none' : 'opacity-100 hover:bg-white hover:scale-110 text-gray-600'}`}
+         >
+            <ArrowRight size={24} />
+         </button>
+
          <div 
            onClick={() => setIsFlipped(!isFlipped)}
            className="relative w-full max-w-xl aspect-[4/5] md:aspect-[3/2] cursor-pointer group perspective-1000 transition-transform duration-200 active:scale-95"
@@ -248,10 +281,11 @@ const VocabReview: React.FC<Props> = ({ language, level }) => {
                         </div>
 
                         <span className="text-gray-500 text-sm uppercase tracking-widest mb-4 font-bold drop-shadow-sm">Character</span>
-                        <h2 className="text-8xl font-bold text-gray-800 mb-6 drop-shadow-sm">{card.character}</h2>
+                        {/* Reduced text size to prevent overlap */}
+                        <h2 className="text-6xl md:text-7xl font-bold text-gray-800 mb-8 drop-shadow-sm">{card.character}</h2>
                         
                         {/* Example Sentence Toggle on Front */}
-                        <div className="w-full relative z-50 px-4 transition-all duration-300 min-h-[40px] flex justify-center">
+                        <div className="w-full relative z-50 px-4 transition-all duration-300 min-h-[40px] flex justify-center mb-12">
                             {showExample ? (
                                 <div className="w-full bg-white/95 backdrop-blur-md p-4 rounded-xl text-left animate-fade-in border border-gray-200 shadow-md">
                                     <p className="text-lg text-gray-800 mb-1 leading-tight">{card.exampleSentence}</p>
@@ -275,8 +309,8 @@ const VocabReview: React.FC<Props> = ({ language, level }) => {
                             )}
                         </div>
                         
-                        {/* Photo Upload Controls */}
-                        <div className="absolute bottom-4 left-0 right-0 flex justify-center pb-0 z-50">
+                        {/* Photo Upload & Fix Controls */}
+                        <div className="absolute bottom-4 left-0 right-0 flex justify-center items-center space-x-3 pb-0 z-50">
                              <input 
                                type="file" 
                                ref={fileInputRef} 
@@ -284,6 +318,8 @@ const VocabReview: React.FC<Props> = ({ language, level }) => {
                                accept="image/*" 
                                onChange={handlePhotoUpload} 
                              />
+                             
+                             {/* Upload Button */}
                              <button 
                                 onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
                                 disabled={imageProcessing}
@@ -300,6 +336,15 @@ const VocabReview: React.FC<Props> = ({ language, level }) => {
                                       <span>Upload Photo</span>
                                     </>
                                 )}
+                             </button>
+
+                             {/* Fix Button (Placeholder for now) */}
+                             <button 
+                                onClick={(e) => { e.stopPropagation(); /* TODO: Implement Fix Logic */ }}
+                                className="flex items-center space-x-2 bg-gray-100/90 text-gray-600 px-4 py-2 rounded-lg text-xs font-bold hover:bg-white hover:text-orange-600 backdrop-blur-sm transition-all border border-gray-200 shadow-sm"
+                             >
+                                <Wrench size={14} />
+                                <span>{t.fix || 'Fix'}</span>
                              </button>
                         </div>
                     </div>

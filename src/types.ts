@@ -9,7 +9,8 @@ export enum AppMode {
   BOOKMARKS = 'bookmarks',
   PROGRESS = 'progress',
   PROFILE = 'profile',
-  VISUALS = 'visuals'
+  VISUALS = 'visuals',
+  VOCAB_QUIZ = 'vocab_quiz'
 }
 
 export enum HSKLevel {
