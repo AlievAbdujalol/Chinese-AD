@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { loginEmailPassword, registerEmailPassword, signInWithGoogle } from '../services/firebase';
-import { LogIn, UserPlus, User } from 'lucide-react';
+import { loginEmailPassword, registerEmailPassword, signInWithGoogle, supabase } from '../services/supabase';
+import { LogIn, UserPlus, User, HelpCircle } from 'lucide-react';
+import ConfigHelp from './ConfigHelp';
 
 interface Props {
   onGuestLogin?: () => void;
@@ -12,13 +13,22 @@ const Login: React.FC<Props> = ({ onGuestLogin }) => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [isSignUp, setIsSignUp] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   
   // Track mount status to prevent state updates after successful login (component unmount)
   const isMounted = useRef(true);
 
   useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'SUPABASE_AUTH_SUCCESS') {
+        const { session } = event.data;
+        supabase.auth.setSession(session);
+      }
+    };
+    window.addEventListener('message', handleMessage);
     return () => {
       isMounted.current = false;
+      window.removeEventListener('message', handleMessage);
     };
   }, []);
 
@@ -35,30 +45,15 @@ const Login: React.FC<Props> = ({ onGuestLogin }) => {
     try {
       if (isSignUp) {
         await registerEmailPassword(email, password);
+        setError("Check your email for confirmation link!");
       } else {
         await loginEmailPassword(email, password);
       }
       // Successful login will trigger unmount via App's auth listener
     } catch (err: any) {
       if (!isMounted.current) return;
-
-      // Only log unexpected errors to keep console clean
-      const knownErrors = ['auth/invalid-credential', 'auth/user-not-found', 'auth/wrong-password', 'auth/email-already-in-use', 'auth/weak-password', 'auth/too-many-requests'];
-      if (!knownErrors.includes(err.code)) {
-         console.error(err);
-      }
-
-      if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
-        setError("Invalid email or password.");
-      } else if (err.code === 'auth/email-already-in-use') {
-        setError("Email already in use. Please sign in.");
-      } else if (err.code === 'auth/weak-password') {
-        setError("Password should be at least 6 characters.");
-      } else if (err.code === 'auth/too-many-requests') {
-        setError("Too many attempts. Please try again later.");
-      } else {
-        setError("Authentication failed. Please check your connection.");
-      }
+      console.error(err);
+      setError(err.message || "Authentication failed.");
     } finally {
       if (isMounted.current) {
         setLoading(false);
@@ -71,32 +66,24 @@ const Login: React.FC<Props> = ({ onGuestLogin }) => {
     setLoading(true);
     setError('');
     try {
-      await signInWithGoogle();
-      // Successful login will trigger unmount via App's auth listener
+      const data = await signInWithGoogle();
+      if (data?.url) {
+        const width = 500;
+        const height = 600;
+        const left = window.screen.width / 2 - width / 2;
+        const top = window.screen.height / 2 - height / 2;
+        window.open(data.url, 'google_login', `width=${width},height=${height},left=${left},top=${top}`);
+      }
     } catch (err: any) {
       if (!isMounted.current) return;
-
-      // Handle known errors gracefully without cluttering console
-      if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
-        setError('Sign in cancelled.');
-        return; 
-      }
+      console.error("Google login error:", err);
+      const message = err.message || "Google sign in failed.";
+      setError(message);
+      setLoading(false);
       
-      if (err.code !== 'auth/unauthorized-domain' && err.code !== 'auth/popup-blocked') {
-         console.error("Google login error:", err);
-      }
-      
-      if (err.code === 'auth/unauthorized-domain') {
-        const currentDomain = window.location.hostname;
-        setError(`Domain "${currentDomain}" is not authorized. Go to Firebase Console > Authentication > Settings > Authorized Domains and add it.`);
-      } else if (err.code === 'auth/popup-blocked') {
-        setError('Popup blocked. Please allow popups for this site.');
-      } else {
-        setError("Google sign in failed. Please try again.");
-      }
-    } finally {
-      if (isMounted.current) {
-        setLoading(false);
+      // Auto-show help if it's a configuration error
+      if (message.includes("invalid_client") || message.includes("401")) {
+        setShowHelp(true);
       }
     }
   };
@@ -111,7 +98,14 @@ const Login: React.FC<Props> = ({ onGuestLogin }) => {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4 font-sans text-gray-900">
       <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 border border-gray-100">
-        <div className="text-center mb-8">
+        <div className="text-center mb-8 relative">
+          <button 
+            onClick={() => setShowHelp(true)}
+            className="absolute top-0 right-0 text-gray-400 hover:text-blue-500 transition-colors"
+            title="Configuration Help"
+          >
+            <HelpCircle size={20} />
+          </button>
           <div className="w-16 h-16 bg-red-600 rounded-full flex items-center justify-center text-white text-3xl font-bold mx-auto mb-4 shadow-md">
             中
           </div>
@@ -228,6 +222,8 @@ const Login: React.FC<Props> = ({ onGuestLogin }) => {
           Restricted Access • HSK Tutor AI
         </div>
       </div>
+      
+      {showHelp && <ConfigHelp onClose={() => setShowHelp(false)} />}
     </div>
   );
 };

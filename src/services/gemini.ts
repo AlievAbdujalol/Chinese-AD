@@ -146,7 +146,7 @@ export async function generateTutorResponse(
   useThinking: boolean
 ) {
   const ai = getAI();
-  const model = useThinking ? 'gemini-3-pro-preview' : (useSearch ? 'gemini-3-flash-preview' : 'gemini-3-flash-preview');
+  const model = useThinking ? 'gemini-3.1-pro-preview' : (useSearch ? 'gemini-3-flash-preview' : 'gemini-3-flash-preview');
   
   const systemInstruction = `You are an expert Chinese language tutor (HSK Focus). 
   Target Level: ${level}.
@@ -548,8 +548,8 @@ export async function playTextToSpeech(text: string): Promise<void> {
 
 export async function generateVisualAid(prompt: string, aspectRatio: string = "1:1", referenceImageBase64?: string): Promise<string | null> {
   const ai = getAI();
-  // Using gemini-3-pro-image-preview for high quality generation/editing
-  const model = 'gemini-3-pro-image-preview';
+  // Using gemini-3.1-flash-image-preview for high quality generation/editing
+  const model = 'gemini-3.1-flash-image-preview';
   
   const parts: any[] = [{ text: prompt }];
   if (referenceImageBase64) {
@@ -590,8 +590,8 @@ export async function generateVisualAid(prompt: string, aspectRatio: string = "1
 // Function to generate Beijing-themed photos from user uploads
 export async function transformImageToBeijing(imageBase64: string): Promise<string> {
   const ai = getAI();
-  // Using gemini-3-pro-image-preview for better reliability with image edits and prompt adherence
-  const model = 'gemini-3-pro-image-preview';
+  // Using gemini-3.1-flash-image-preview for better reliability with image edits and prompt adherence
+  const model = 'gemini-3.1-flash-image-preview';
   
   const prompt = `Generate a realistic photo of this person visiting a famous landmark in Beijing, China (like the Forbidden City, Summer Palace, or Great Wall). 
   The person from the input image should be integrated naturally into the Beijing scene. 

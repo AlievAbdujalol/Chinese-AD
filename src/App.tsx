@@ -10,11 +10,13 @@ import VocabReview from './components/VocabReview';
 import VocabBookmarks from './components/VocabBookmarks';
 import Profile from './components/Profile';
 import ImageGen from './components/ImageGen';
+import OfflineManager from './components/OfflineManager';
+import SpeakingPractice from './components/SpeakingPractice';
 import Login from './components/Login';
 import { AppMode, AppLanguage, HSKLevel } from './types';
 import { Menu, Globe, Settings, Bell, X, ArrowRight } from 'lucide-react';
-import { auth } from './services/firebase';
-import firebase from 'firebase/compat/app';
+import { supabase } from './services/supabase';
+import { User } from '@supabase/supabase-js';
 import { getLevelTheme } from './utils/theme';
 import { updateStudyTime, getUserGoals, getDailyProgress } from './services/db';
 
@@ -30,7 +32,7 @@ const App: React.FC = () => {
   const [language, setLanguage] = useState<AppLanguage>(AppLanguage.EN);
   const [level, setLevel] = useState<HSKLevel>(HSKLevel.HSK1);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [user, setUser] = useState<firebase.User | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [isGuest, setIsGuest] = useState(false);
 
@@ -56,13 +58,32 @@ const App: React.FC = () => {
   };
 
   useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged((currentUser) => {
-      setUser(currentUser);
+    // Check if we are running in a popup (e.g. OAuth callback)
+    if (window.opener && window.opener !== window) {
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session) {
+          // Notify opener and close
+          window.opener.postMessage({ type: 'SUPABASE_AUTH_SUCCESS', session }, '*');
+          window.close();
+        }
+      });
+    }
+
+    // Check active session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
       setAuthLoading(false);
-      // Reset guest mode if actual login occurs
-      if (currentUser) setIsGuest(false);
     });
-    return () => unsubscribe();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      setAuthLoading(false);
+      if (session?.user) setIsGuest(false);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   // Study Timer Logic
@@ -141,12 +162,12 @@ const App: React.FC = () => {
 
   // Construct guest user object if needed
   const guestUser = {
-      uid: 'guest',
-      displayName: 'Guest User',
-      email: 'local-session',
-      photoURL: null,
-      providerData: []
-  } as unknown as firebase.User;
+      id: 'guest',
+      app_metadata: {},
+      user_metadata: { full_name: 'Guest User' },
+      aud: 'authenticated',
+      created_at: new Date().toISOString()
+  } as unknown as User;
 
   const activeUser = user || (isGuest ? guestUser : null);
 
@@ -154,7 +175,7 @@ const App: React.FC = () => {
   const renderContent = () => {
     // We pass user or key props to force re-render when user logs in/out
     const commonProps = { level, language };
-    const userKey = activeUser ? activeUser.uid : 'guest';
+    const userKey = activeUser ? activeUser.id : 'guest';
 
     switch (mode) {
       case AppMode.DASHBOARD:
@@ -170,6 +191,8 @@ const App: React.FC = () => {
         );
       case AppMode.LIVE:
         return <LiveTutor key={userKey} {...commonProps} />;
+      case AppMode.SPEAKING:
+        return <SpeakingPractice key={userKey} {...commonProps} />;
       case AppMode.QUIZ:
         return <QuizMode key={userKey} {...commonProps} />;
       case AppMode.EXAM:
@@ -191,6 +214,8 @@ const App: React.FC = () => {
              setLevel={setLevel} 
           />
         );
+      case AppMode.DOWNLOADS:
+        return <OfflineManager key={userKey} language={language} level={level} />;
       default:
         return <Dashboard key={userKey} {...commonProps} />;
     }

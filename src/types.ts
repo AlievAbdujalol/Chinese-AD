@@ -10,7 +10,9 @@ export enum AppMode {
   PROGRESS = 'progress',
   PROFILE = 'profile',
   VISUALS = 'visuals',
-  VOCAB_QUIZ = 'vocab_quiz'
+  VOCAB_QUIZ = 'vocab_quiz',
+  DOWNLOADS = 'downloads',
+  SPEAKING = 'speaking'
 }
 
 export enum HSKLevel {
@@ -68,6 +70,7 @@ export interface VocabCard {
   exampleTranslation: string;
   bookmarked?: boolean;
   customImage?: string; // User uploaded/generated Beijing photo
+  level?: HSKLevel;
 }
 
 export interface QuizResult {

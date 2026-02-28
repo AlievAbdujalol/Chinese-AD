@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { generateMockExam, playTextToSpeech, getFriendlyErrorMessage } from '../services/gemini';
-import { saveResult } from '../services/db';
+import { saveResult, getOfflineBatches } from '../services/db';
 import { AppLanguage, HSKLevel, ExamData } from '../types';
 import { Clock, CheckCircle, AlertCircle, RefreshCw, Volume2, FileText } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
@@ -55,11 +55,36 @@ const ExamMode: React.FC<Props> = ({ language, level }) => {
     setCurrentSection('listening');
     setSaved(false);
     setError(null);
+
+    const isOffline = !navigator.onLine;
+
     try {
-      const data = await generateMockExam(level, language);
-      setExamData(data);
-      setStatus('active');
-    } catch (e) {
+      if (isOffline) {
+        const batches = await getOfflineBatches('exam', level);
+        if (batches.length > 0) {
+          setExamData(batches[0].content);
+          setStatus('active');
+        } else {
+          throw new Error("No offline exams found. Please download some when online.");
+        }
+      } else {
+        try {
+          const data = await generateMockExam(level, language);
+          setExamData(data);
+          setStatus('active');
+        } catch (genError: any) {
+          console.warn("Exam generation failed, checking offline...", genError);
+          const batches = await getOfflineBatches('exam', level);
+          if (batches.length > 0) {
+            setExamData(batches[0].content);
+            setStatus('active');
+            setError("Network error. Loaded offline exam instead.");
+          } else {
+            throw genError;
+          }
+        }
+      }
+    } catch (e: any) {
       console.error(e);
       setError(getFriendlyErrorMessage(e));
       setStatus('idle');

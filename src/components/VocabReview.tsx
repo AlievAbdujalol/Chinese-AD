@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { generateVocabularyBatch, playTextToSpeech, getFriendlyErrorMessage } from '../services/gemini';
-import { saveVocabProgress, toggleVocabBookmark, saveVocabCustomImage } from '../services/db';
+import { saveVocabProgress, toggleVocabBookmark, saveVocabCustomImage, getOfflineBatches } from '../services/db';
 import { AppLanguage, HSKLevel, VocabCard } from '../types';
 import { RefreshCw, Volume2, RotateCw, BookOpen, Check, ThumbsUp, AlertTriangle, Smile, Star, AlertCircle, Eye, EyeOff, Camera, Upload, ImageIcon, ImagePlus, Wrench, ArrowLeft, ArrowRight } from 'lucide-react';
 import { translations } from '../utils/translations';
@@ -35,10 +35,38 @@ const VocabReview: React.FC<Props> = ({ language, level }) => {
     setShowExample(false);
     setCompleted(false);
     setError(null);
+
+    const isOffline = !navigator.onLine;
+
     try {
-      const data = await generateVocabularyBatch(level, language);
-      setCards(data);
-    } catch (e) {
+      if (isOffline) {
+        // Try to load from offline batches
+        const batches = await getOfflineBatches('vocab', level);
+        if (batches.length > 0) {
+          // Pick a random batch or the latest one
+          const batch = batches[0]; // Latest
+          setCards(batch.content);
+        } else {
+          throw new Error("No offline vocabulary packs found. Please download some when online.");
+        }
+      } else {
+        // Online - Generate new
+        try {
+          const data = await generateVocabularyBatch(level, language);
+          setCards(data);
+        } catch (genError: any) {
+          // Fallback to offline if generation fails (e.g. network glitch)
+          console.warn("Generation failed, checking offline cache...", genError);
+          const batches = await getOfflineBatches('vocab', level);
+          if (batches.length > 0) {
+             setCards(batches[0].content);
+             setError("Network error. Loaded offline content instead.");
+          } else {
+             throw genError;
+          }
+        }
+      }
+    } catch (e: any) {
       console.error(e);
       setError(getFriendlyErrorMessage(e));
     } finally {
@@ -260,24 +288,24 @@ const VocabReview: React.FC<Props> = ({ language, level }) => {
                     
                     {/* Content Layer */}
                     <div className="relative z-10 w-full h-full flex flex-col items-center justify-center p-6">
-                        {/* Top Left: Bookmark (Swapped) */}
+                        {/* Top Left: Audio */}
                         <div className="absolute top-4 left-4 z-50">
-                           <button 
-                             onClick={toggleBookmark}
-                             className={`p-3 rounded-full transition-colors ${card.bookmarked ? 'text-yellow-400 bg-yellow-50 shadow-sm' : 'text-gray-300 hover:text-yellow-400'}`}
-                           >
-                             <Star size={24} fill={card.bookmarked ? "currentColor" : "none"} />
-                           </button>
-                        </div>
-
-                        {/* Top Right: Audio (Swapped) */}
-                        <div className="absolute top-4 right-4 z-50">
                           <button 
                             onClick={(e) => playAudio(card.character, e)} 
                             className="p-3 bg-white/90 text-red-600 rounded-full hover:bg-white transition-colors hover:scale-110 active:scale-90 shadow-sm backdrop-blur-sm border border-red-100"
                           >
                             <Volume2 size={24} />
                           </button>
+                        </div>
+
+                        {/* Top Right: Bookmark */}
+                        <div className="absolute top-4 right-4 z-50">
+                           <button 
+                             onClick={toggleBookmark}
+                             className={`p-3 rounded-full transition-colors ${card.bookmarked ? 'text-yellow-400 bg-yellow-50 shadow-sm' : 'text-gray-300 hover:text-yellow-400'}`}
+                           >
+                             <Star size={24} fill={card.bookmarked ? "currentColor" : "none"} />
+                           </button>
                         </div>
 
                         <span className="text-gray-500 text-sm uppercase tracking-widest mb-4 font-bold drop-shadow-sm">Character</span>

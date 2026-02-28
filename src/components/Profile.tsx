@@ -1,15 +1,17 @@
 
 import React, { useEffect, useState } from 'react';
 import { AppLanguage, HSKLevel } from '../types';
-import firebase from 'firebase/compat/app';
+import { User } from '@supabase/supabase-js';
 import { translations } from '../utils/translations';
-import { logout } from '../services/firebase';
+import { logout } from '../services/supabase';
 import { getUserStats, getUserGoals, saveUserGoals } from '../services/db';
-import { LogOut, User as UserIcon, Settings, BookOpen, Award, FileText, Globe, Target } from 'lucide-react';
+import { LogOut, User as UserIcon, Settings, BookOpen, Award, FileText, Globe, Target, Cloud } from 'lucide-react';
 import { getLevelTheme } from '../utils/theme';
+import LearnedWordsList from './LearnedWordsList';
+import DeployGuide from './DeployGuide';
 
 interface Props {
-  user: firebase.User;
+  user: User;
   language: AppLanguage;
   level: HSKLevel;
   setLanguage: (lang: AppLanguage) => void;
@@ -27,6 +29,8 @@ const Profile: React.FC<Props> = ({ user, language, level, setLanguage, setLevel
   const [stats, setStats] = useState({ totalWords: 0, quizAverage: 0, examsTaken: 0 });
   const [goals, setGoals] = useState({ dailyWords: 10, dailyMinutes: 15, dailySpeakingMinutes: 5, dailyPronunciation: 10 });
   const [goalsSaved, setGoalsSaved] = useState(false);
+  const [showLearnedWords, setShowLearnedWords] = useState(false);
+  const [showDeployGuide, setShowDeployGuide] = useState(false);
   
   const theme = getLevelTheme(level);
 
@@ -47,10 +51,14 @@ const Profile: React.FC<Props> = ({ user, language, level, setLanguage, setLevel
   };
 
   const getAccountType = () => {
-    if (user.uid === 'guest') return 'Guest Session';
-    if (user.providerData[0]?.providerId === 'google.com') return 'Google Account';
+    if (user.id === 'guest') return 'Guest Session';
+    if (user.app_metadata?.provider === 'google') return 'Google Account';
     return 'Email Account';
   };
+
+  const userAvatar = user.user_metadata?.avatar_url || user.user_metadata?.picture;
+  const userName = user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || "Learner";
+  const userInitial = user.email?.[0]?.toUpperCase();
 
   return (
     <div className="h-full bg-gray-50 overflow-y-auto p-4 md:p-8">
@@ -64,14 +72,14 @@ const Profile: React.FC<Props> = ({ user, language, level, setLanguage, setLevel
         {/* User Card */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 flex flex-col md:flex-row items-center md:items-start space-y-4 md:space-y-0 md:space-x-6">
            <div className="w-24 h-24 rounded-full bg-red-100 flex items-center justify-center text-red-600 text-3xl font-bold border-4 border-white shadow-md">
-              {user.photoURL ? (
-                <img src={user.photoURL} alt="User" className="w-full h-full rounded-full object-cover" />
+              {userAvatar ? (
+                <img src={userAvatar} alt="User" className="w-full h-full rounded-full object-cover" />
               ) : (
-                user.email?.[0]?.toUpperCase() || <UserIcon size={40} />
+                userInitial || <UserIcon size={40} />
               )}
            </div>
            <div className="flex-1 text-center md:text-left">
-              <h2 className="text-2xl font-bold text-gray-900">{user.displayName || "Learner"}</h2>
+              <h2 className="text-2xl font-bold text-gray-900">{userName}</h2>
               <p className="text-gray-500 mb-2">{user.email || 'No email linked'}</p>
               <div className="inline-flex items-center px-3 py-1 rounded-full bg-green-50 text-green-700 text-xs font-medium border border-green-100">
                 {getAccountType()}
@@ -86,7 +94,10 @@ const Profile: React.FC<Props> = ({ user, language, level, setLanguage, setLevel
              {t.stats}
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-             <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 text-center">
+             <div 
+               onClick={() => setShowLearnedWords(true)}
+               className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 text-center cursor-pointer hover:shadow-md transition-shadow"
+             >
                 <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center mx-auto mb-3">
                    <BookOpen size={24} />
                 </div>
@@ -116,10 +127,18 @@ const Profile: React.FC<Props> = ({ user, language, level, setLanguage, setLevel
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             {/* App Settings */}
             <div>
-               <h3 className="text-lg font-bold text-gray-700 mb-4 flex items-center">
-                 <Settings className="mr-2 text-gray-500" size={20} />
-                 {t.settings}
-               </h3>
+               <div className="flex items-center justify-between mb-4">
+                 <h3 className="text-lg font-bold text-gray-700 flex items-center">
+                   <Settings className="mr-2 text-gray-500" size={20} />
+                   {t.settings}
+                 </h3>
+                 <button 
+                   onClick={() => (window as any).aistudio?.openSelectKey?.()}
+                   className="text-blue-500 hover:text-blue-600 text-sm font-medium hover:underline"
+                 >
+                   Add an API key for all users, to save money.
+                 </button>
+               </div>
                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-6 h-full">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">{t.level}</label>
@@ -214,20 +233,31 @@ const Profile: React.FC<Props> = ({ user, language, level, setLanguage, setLevel
         </div>
 
         {/* Actions */}
-        <div className="pt-4 border-t border-gray-200">
+        <div className="pt-4 border-t border-gray-200 flex flex-col md:flex-row justify-between items-center gap-4">
            <button 
              onClick={() => {
-                 if (user.uid === 'guest') window.location.reload(); // Simple reload for guest logout
+                 if (user.id === 'guest') window.location.reload(); // Simple reload for guest logout
                  else logout();
              }}
-             className="flex items-center text-red-600 hover:text-red-700 font-bold px-4 py-2 rounded-lg hover:bg-red-50 transition-colors"
+             className="flex items-center text-red-600 hover:text-red-700 font-bold px-4 py-2 rounded-lg hover:bg-red-50 transition-colors w-full md:w-auto justify-center"
            >
               <LogOut size={20} className="mr-2" />
               {t.signOut}
            </button>
+
+           <button 
+             onClick={() => setShowDeployGuide(true)}
+             className="flex items-center text-gray-500 hover:text-blue-600 font-medium px-4 py-2 rounded-lg hover:bg-blue-50 transition-colors text-sm w-full md:w-auto justify-center"
+           >
+              <Cloud size={18} className="mr-2" />
+              How to Deploy for Free
+           </button>
         </div>
 
       </div>
+      
+      {showLearnedWords && <LearnedWordsList onClose={() => setShowLearnedWords(false)} language={language} />}
+      {showDeployGuide && <DeployGuide onClose={() => setShowDeployGuide(false)} />}
     </div>
   );
 };

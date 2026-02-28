@@ -101,6 +101,7 @@ const VocabBookmarks: React.FC<Props> = ({ language, level }) => {
         <div className={`mt-4 ${theme.badge} inline-block px-3 py-1 rounded-full text-xs font-bold`}>
            {level}
         </div>
+        <p className="text-blue-400 text-sm font-medium mt-8">to realize the function</p>
       </div>
     );
   }

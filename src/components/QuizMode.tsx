@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { generateQuiz, getFriendlyErrorMessage } from '../services/gemini';
-import { saveResult } from '../services/db';
+import { saveResult, getOfflineBatches } from '../services/db';
 import { AppLanguage, HSKLevel, QuizQuestion } from '../types';
 import { CheckCircle, XCircle, RefreshCw, ChevronRight, AlertCircle } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
@@ -36,10 +36,32 @@ const QuizMode: React.FC<Props> = ({ language, level }) => {
     setSaved(false);
     setError(null);
 
+    const isOffline = !navigator.onLine;
+
     try {
-      const qs = await generateQuiz(topic, level, language);
-      setQuestions(qs);
-    } catch (e) {
+      if (isOffline) {
+        const batches = await getOfflineBatches('quiz', level);
+        if (batches.length > 0) {
+          setQuestions(batches[0].content);
+        } else {
+          throw new Error("No offline quizzes found. Please download some when online.");
+        }
+      } else {
+        try {
+          const qs = await generateQuiz(topic, level, language);
+          setQuestions(qs);
+        } catch (genError: any) {
+          console.warn("Quiz generation failed, checking offline...", genError);
+          const batches = await getOfflineBatches('quiz', level);
+          if (batches.length > 0) {
+            setQuestions(batches[0].content);
+            setError("Network error. Loaded offline quiz instead.");
+          } else {
+            throw genError;
+          }
+        }
+      }
+    } catch (e: any) {
       console.error(e);
       setError(getFriendlyErrorMessage(e));
     } finally {
