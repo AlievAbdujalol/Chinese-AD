@@ -14,6 +14,7 @@ const Login: React.FC<Props> = ({ onGuestLogin }) => {
   const [loading, setLoading] = useState(false);
   const [isSignUp, setIsSignUp] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [failedAttempts, setFailedAttempts] = useState(0);
   
   // Track mount status to prevent state updates after successful login (component unmount)
   const isMounted = useRef(true);
@@ -53,7 +54,19 @@ const Login: React.FC<Props> = ({ onGuestLogin }) => {
     } catch (err: any) {
       if (!isMounted.current) return;
       console.error(err);
-      setError(err.message || "Authentication failed.");
+      let message = err.message || "Authentication failed.";
+      
+      if (message.includes("Invalid login credentials")) {
+        // Auto-switch to Sign Up if user doesn't exist (likely case for new users)
+        // But we can't be 100% sure it's not just a wrong password.
+        // Let's change the message to be very clear.
+        message = "Login failed. If you don't have an account, please use the 'Sign Up' tab.";
+      } else if (message.includes("Failed to fetch")) {
+        message = "Network error. Please check your internet connection or try again later.";
+      }
+      
+      setFailedAttempts(prev => prev + 1);
+      setError(message);
     } finally {
       if (isMounted.current) {
         setLoading(false);
@@ -110,15 +123,49 @@ const Login: React.FC<Props> = ({ onGuestLogin }) => {
             中
           </div>
           <h2 className="text-3xl font-bold text-gray-800">HSK Tutor</h2>
-          <p className="text-gray-500 mt-2">
-            {isSignUp ? 'Create an account to start' : 'Sign in to continue learning'}
-          </p>
+        </div>
+
+        <div className="flex border-b border-gray-200 mb-6">
+          <button
+            type="button"
+            className={`flex-1 pb-2 text-sm font-bold transition-colors ${!isSignUp ? 'text-red-600 border-b-2 border-red-600' : 'text-gray-400 hover:text-gray-600'}`}
+            onClick={() => { setIsSignUp(false); setError(''); }}
+          >
+            Sign In
+          </button>
+          <button
+            type="button"
+            className={`flex-1 pb-2 text-sm font-bold transition-colors ${isSignUp ? 'text-red-600 border-b-2 border-red-600' : 'text-gray-400 hover:text-gray-600'}`}
+            onClick={() => { setIsSignUp(true); setError(''); }}
+          >
+            Sign Up
+          </button>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
           {error && (
-            <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm text-center border border-red-100 flex items-center justify-center">
-              {error}
+            <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm text-center border border-red-100 flex flex-col items-center justify-center">
+              <p className="mb-2">{error}</p>
+              {error.includes("Login failed") && !isSignUp && (
+                <div className="flex flex-col space-y-2 mt-2 w-full">
+                  <button
+                    type="button"
+                    onClick={() => { setIsSignUp(true); setError(''); }}
+                    className="text-xs font-bold bg-white border border-red-200 px-3 py-2 rounded-lg hover:bg-red-50 transition-colors w-full animate-pulse"
+                  >
+                    Switch to Sign Up
+                  </button>
+                  {onGuestLogin && (
+                    <button
+                      type="button"
+                      onClick={onGuestLogin}
+                      className="text-xs font-bold bg-gray-100 border border-gray-300 px-3 py-2 rounded-lg hover:bg-gray-200 transition-colors w-full flex items-center justify-center"
+                    >
+                      <User size={14} className="mr-1" /> Continue as Guest
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           )}
           
@@ -135,7 +182,18 @@ const Login: React.FC<Props> = ({ onGuestLogin }) => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1 ml-1">Password</label>
+            <div className="flex justify-between items-center mb-1">
+              <label className="block text-sm font-medium text-gray-700 ml-1">Password</label>
+              {!isSignUp && (
+                <button 
+                  type="button"
+                  onClick={() => setError("Please contact support or use the 'Forgot Password' link in the Supabase email if configured.")}
+                  className="text-xs text-red-600 hover:text-red-700 font-medium"
+                >
+                  Forgot Password?
+                </button>
+              )}
+            </div>
             <input
               type="password"
               value={password}
@@ -209,15 +267,6 @@ const Login: React.FC<Props> = ({ onGuestLogin }) => {
             )}
         </div>
         
-        <div className="mt-6 text-center">
-          <button 
-            onClick={toggleMode}
-            className="text-sm text-gray-500 hover:text-red-600 font-medium transition-colors"
-          >
-            {isSignUp ? 'Already have an account? Sign In' : 'Need an account? Sign Up'}
-          </button>
-        </div>
-
         <div className="mt-6 text-center text-xs text-gray-400 border-t border-gray-100 pt-4">
           Restricted Access • HSK Tutor AI
         </div>

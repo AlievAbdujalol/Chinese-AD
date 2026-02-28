@@ -47,41 +47,88 @@ const getUserId = async () => {
   return session?.user?.id;
 };
 
+// Helper to check for missing table errors
+const isTableMissingError = (error: any) => {
+  return error && (
+    error.code === 'PGRST205' || // PostgREST: Could not find the table
+    error.code === '42P01'       // Postgres: undefined_table
+  );
+};
+
+// Helper to check for network errors (Failed to fetch)
+const isNetworkError = (error: any) => {
+  const msg = error?.message || error?.toString() || '';
+  return msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('network');
+};
+
+// Track warned tables to avoid spamming the console
+const warnedTables = new Set<string>();
+
+const logMissingTableWarning = (tableName: string, operation: string) => {
+  if (!warnedTables.has(tableName)) {
+    console.debug(`[Setup Required] Table '${tableName}' missing. ${operation} disabled.`);
+    warnedTables.add(tableName);
+  }
+};
+
 // --- Results API ---
 
 export const saveResult = async (type: 'quiz' | 'exam', score: number, total: number, level: HSKLevel) => {
-  const userId = await getUserId();
-  if (!userId) return;
+  try {
+    const userId = await getUserId();
+    if (!userId) return;
 
-  const { error } = await supabase.from('results').insert({
-    user_id: userId,
-    type,
-    score,
-    total,
-    level,
-    date: new Date().toLocaleDateString(),
-    timestamp: Date.now(),
-  });
+    const { error } = await supabase.from('results').insert({
+      user_id: userId,
+      type,
+      score,
+      total,
+      level,
+      date: new Date().toLocaleDateString(),
+      timestamp: Date.now(),
+    });
 
-  if (error) console.error('Error saving result:', error);
+    if (error) {
+      if (isTableMissingError(error)) {
+        logMissingTableWarning('results', 'Saving results');
+      } else {
+        console.error('Error saving result:', error);
+      }
+    }
+  } catch (e) {
+    console.error("Network/Unexpected error in saveResult:", e);
+  }
 };
 
 export const getRecentResults = async () => {
-  const userId = await getUserId();
-  if (!userId) return [];
+  try {
+    const userId = await getUserId();
+    if (!userId) return [];
 
-  const { data, error } = await supabase
-    .from('results')
-    .select('*')
-    .eq('user_id', userId)
-    .order('timestamp', { ascending: false })
-    .limit(20);
+    const { data, error } = await supabase
+      .from('results')
+      .select('*')
+      .eq('user_id', userId)
+      .order('timestamp', { ascending: false })
+      .limit(20);
 
-  if (error) {
-    console.error('Error fetching results:', error);
+    if (error) {
+      if (isTableMissingError(error)) {
+        logMissingTableWarning('results', 'Fetching results');
+        return [];
+      }
+      if (!isNetworkError(error)) {
+        console.error('Error fetching results:', error);
+      }
+      return [];
+    }
+    return data || [];
+  } catch (e) {
+    if (!isNetworkError(e)) {
+       console.error("Network/Unexpected error in getRecentResults:", e);
+    }
     return [];
   }
-  return data || [];
 };
 
 // --- Vocabulary API ---
@@ -109,28 +156,30 @@ export const saveVocabCustomImage = async (card: VocabCard, imageBase64: string,
     last_reviewed: Date.now()
   }, { onConflict: 'user_id, character' });
 
-  if (error) console.error('Error saving custom image:', error);
+  if (error) {
+    if (isTableMissingError(error)) {
+       logMissingTableWarning('vocabulary', 'Saving custom image');
+    } else {
+       console.error('Error saving custom image:', error);
+    }
+  }
 };
 
 export const saveVocabProgress = async (card: VocabCard, level: HSKLevel, rating: 'hard' | 'good' | 'easy') => {
   const userId = await getUserId();
   if (!userId) return;
 
-  // We need to preserve existing bookmark/image if we are just updating rating
-  // Supabase upsert handles this if we don't include the fields? No, it replaces the row or updates specified fields.
-  // If we want to merge, we should probably select first or use a jsonb column, but here we have columns.
-  // We can use `ignoreDuplicates: false` (default) which updates.
-  // But if we omit `bookmarked`, it might set it to default (false) if it's a new row, or keep it if we don't touch it?
-  // SQL `INSERT ... ON CONFLICT DO UPDATE` updates only specified columns if we construct the query that way.
-  // The JS client `upsert` sends the whole object.
-  
   // Strategy: Fetch existing to get bookmark/image status, then upsert.
-  const { data: existing } = await supabase
+  const { data: existing, error: fetchError } = await supabase
     .from('vocabulary')
     .select('bookmarked, custom_image, last_reviewed')
     .eq('user_id', userId)
     .eq('character', card.character)
     .single();
+    
+  if (fetchError && !isTableMissingError(fetchError) && fetchError.code !== 'PGRST116') { // PGRST116 is "The result contains 0 rows"
+      console.warn("Error fetching existing vocab:", fetchError);
+  }
 
   const now = Date.now();
   const todayStart = new Date().setHours(0,0,0,0);
@@ -138,22 +187,27 @@ export const saveVocabProgress = async (card: VocabCard, level: HSKLevel, rating
   // If not reviewed today, increment daily stats
   if (!existing || !existing.last_reviewed || existing.last_reviewed < todayStart) {
       const dateKey = new Date().toISOString().split('T')[0];
-      // Increment words_reviewed
-      // This is a bit racy but acceptable for stats
-      const { data: currentStats } = await supabase
+      
+      const { data: currentStats, error: statsError } = await supabase
         .from('daily_stats')
         .select('words_reviewed')
         .eq('user_id', userId)
         .eq('date', dateKey)
         .single();
-        
-      const currentWords = currentStats?.words_reviewed || 0;
       
-      await supabase.from('daily_stats').upsert({
-          user_id: userId,
-          date: dateKey,
-          words_reviewed: currentWords + 1
-      }, { onConflict: 'user_id, date' });
+      if (!statsError || isTableMissingError(statsError) || statsError.code === 'PGRST116') {
+          const currentWords = currentStats?.words_reviewed || 0;
+          
+          const { error: upsertError } = await supabase.from('daily_stats').upsert({
+              user_id: userId,
+              date: dateKey,
+              words_reviewed: currentWords + 1
+          }, { onConflict: 'user_id, date' });
+          
+          if (upsertError && isTableMissingError(upsertError)) {
+             logMissingTableWarning('daily_stats', 'Updating daily stats');
+          }
+      }
   }
 
   const { error } = await supabase.from('vocabulary').upsert({
@@ -171,19 +225,30 @@ export const saveVocabProgress = async (card: VocabCard, level: HSKLevel, rating
     last_reviewed: Date.now(),
   }, { onConflict: 'user_id, character' });
 
-  if (error) console.error('Error saving vocab progress:', error);
+  if (error) {
+    if (isTableMissingError(error)) {
+       logMissingTableWarning('vocabulary', 'Saving vocab progress');
+    } else {
+       console.error('Error saving vocab progress:', error);
+    }
+  }
 };
 
 export const toggleVocabBookmark = async (card: VocabCard, level: HSKLevel) => {
   const userId = await getUserId();
   if (!userId) return !card.bookmarked;
 
-  const { data: existing } = await supabase
+  const { data: existing, error: fetchError } = await supabase
     .from('vocabulary')
     .select('bookmarked, custom_image, rating')
     .eq('user_id', userId)
     .eq('character', card.character)
     .single();
+
+  if (fetchError && isTableMissingError(fetchError)) {
+      logMissingTableWarning('vocabulary', 'Toggling bookmark');
+      return !card.bookmarked; // Optimistic toggle? Or fail? Let's fail safe.
+  }
 
   const newBookmarkState = existing ? !existing.bookmarked : !card.bookmarked;
 
@@ -203,7 +268,11 @@ export const toggleVocabBookmark = async (card: VocabCard, level: HSKLevel) => {
   }, { onConflict: 'user_id, character' });
 
   if (error) {
-    console.error('Error toggling bookmark:', error);
+    if (isTableMissingError(error)) {
+        logMissingTableWarning('vocabulary', 'Saving bookmark');
+    } else {
+        console.error('Error toggling bookmark:', error);
+    }
     return !newBookmarkState; // Revert on error
   }
   return newBookmarkState;
@@ -221,6 +290,10 @@ export const getBookmarkedWords = async (level: HSKLevel): Promise<VocabCard[]> 
     .eq('level', level);
 
   if (error) {
+    if (isTableMissingError(error)) {
+        logMissingTableWarning('vocabulary', 'Fetching bookmarks');
+        return [];
+    }
     console.error('Error fetching bookmarks:', error);
     return [];
   }
@@ -249,6 +322,10 @@ export const getAllLearnedWords = async (): Promise<VocabCard[]> => {
     .eq('user_id', userId);
 
   if (error) {
+    if (isTableMissingError(error)) {
+        logMissingTableWarning('vocabulary', 'Fetching learned words');
+        return [];
+    }
     console.error('Error fetching learned words:', error);
     return [];
   }
@@ -268,78 +345,104 @@ export const getAllLearnedWords = async (): Promise<VocabCard[]> => {
 };
 
 export const getVocabStats = async (level?: HSKLevel) => {
-  const userId = await getUserId();
-  if (!userId) return [];
+  try {
+    const userId = await getUserId();
+    if (!userId) return [];
 
-  let query = supabase
-    .from('vocabulary')
-    .select('last_reviewed, level')
-    .eq('user_id', userId);
+    let query = supabase
+      .from('vocabulary')
+      .select('last_reviewed, level')
+      .eq('user_id', userId);
 
-  if (level) {
-    query = query.eq('level', level);
-  }
+    if (level) {
+      query = query.eq('level', level);
+    }
 
-  const { data, error } = await query;
+    const { data, error } = await query;
 
-  if (error) {
-    console.error('Error fetching vocab stats:', error);
+    if (error) {
+      if (isTableMissingError(error)) {
+          logMissingTableWarning('vocabulary', 'Fetching vocab stats');
+          return [];
+      }
+      if (!isNetworkError(error)) {
+          console.error('Error fetching vocab stats:', error);
+      }
+      return [];
+    }
+
+    const last7Days: Record<string, number> = {};
+    const today = new Date();
+    
+    for(let i=6; i>=0; i--) {
+        const d = new Date(today);
+        d.setDate(today.getDate() - i);
+        const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
+        last7Days[dayName] = 0;
+    }
+
+    data.forEach((v: any) => {
+        if (!v.last_reviewed) return;
+        const d = new Date(v.last_reviewed);
+        const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
+        if (last7Days[dayName] !== undefined) {
+            last7Days[dayName]++;
+        }
+    });
+
+    return Object.keys(last7Days).map(key => ({
+        name: key,
+        words: last7Days[key]
+    }));
+  } catch (e) {
+    if (!isNetworkError(e)) {
+       console.error("Network/Unexpected error in getVocabStats:", e);
+    }
     return [];
   }
-
-  const last7Days: Record<string, number> = {};
-  const today = new Date();
-  
-  for(let i=6; i>=0; i--) {
-      const d = new Date(today);
-      d.setDate(today.getDate() - i);
-      const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
-      last7Days[dayName] = 0;
-  }
-
-  data.forEach((v: any) => {
-      if (!v.last_reviewed) return;
-      const d = new Date(v.last_reviewed);
-      const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
-      if (last7Days[dayName] !== undefined) {
-          last7Days[dayName]++;
-      }
-  });
-
-  return Object.keys(last7Days).map(key => ({
-      name: key,
-      words: last7Days[key]
-  }));
 };
 
 export const getUserStats = async () => {
   const userId = await getUserId();
   if (!userId) return { totalWords: 0, quizAverage: 0, examsTaken: 0 };
 
-  // Parallel fetch
-  const [vocabRes, resultsRes] = await Promise.all([
-    supabase.from('vocabulary').select('id', { count: 'exact' }).eq('user_id', userId),
-    supabase.from('results').select('score, total, type').eq('user_id', userId)
-  ]);
+  try {
+    // Parallel fetch
+    const [vocabRes, resultsRes] = await Promise.all([
+      supabase.from('vocabulary').select('id', { count: 'exact' }).eq('user_id', userId),
+      supabase.from('results').select('score, total, type').eq('user_id', userId)
+    ]);
 
-  const totalWords = vocabRes.count || 0;
-  
-  let quizAverage = 0;
-  let examsTaken = 0;
-
-  if (resultsRes.data) {
-    const quizzes = resultsRes.data.filter((r: any) => r.type === 'quiz');
-    const exams = resultsRes.data.filter((r: any) => r.type === 'exam');
-    
-    examsTaken = exams.length;
-    
-    if (quizzes.length > 0) {
-        const totalPct = quizzes.reduce((acc: number, curr: any) => acc + ((curr.score / curr.total) * 100), 0);
-        quizAverage = Math.round(totalPct / quizzes.length);
+    // Handle missing tables gracefully
+    if (vocabRes.error && isTableMissingError(vocabRes.error)) {
+        logMissingTableWarning('vocabulary', 'Fetching user stats');
     }
-  }
+    if (resultsRes.error && isTableMissingError(resultsRes.error)) {
+        logMissingTableWarning('results', 'Fetching user stats');
+    }
 
-  return { totalWords, quizAverage, examsTaken };
+    const totalWords = vocabRes.count || 0;
+    
+    let quizAverage = 0;
+    let examsTaken = 0;
+
+    if (resultsRes.data) {
+      const quizzes = resultsRes.data.filter((r: any) => r.type === 'quiz');
+      const exams = resultsRes.data.filter((r: any) => r.type === 'exam');
+      
+      examsTaken = exams.length;
+      
+      if (quizzes.length > 0) {
+          const totalPct = quizzes.reduce((acc: number, curr: any) => acc + ((curr.score / curr.total) * 100), 0);
+          quizAverage = Math.round(totalPct / quizzes.length);
+      }
+    }
+
+    return { totalWords, quizAverage, examsTaken };
+  } catch (e) {
+    console.error("Error getting user stats:", e);
+    return { totalWords: 0, quizAverage: 0, examsTaken: 0 };
+  }
 };
 
 export const getGoalAdvice = async (level: HSKLevel, language: AppLanguage = AppLanguage.EN): Promise<string> => {
@@ -367,6 +470,11 @@ export const getCachedAudio = async (text: string): Promise<string | null> => {
     .eq('text', text)
     .limit(1)
     .single();
+
+  if (error && isTableMissingError(error)) {
+      logMissingTableWarning('global_audio_cache', 'Fetching audio cache');
+      return null;
+  }
 
   if (data) {
     // Cache locally
@@ -406,7 +514,13 @@ export const saveCachedAudio = async (text: string, audioBase64: string) => {
       timestamp: Date.now(),
       contributor: userId
     });
-    if (error) console.warn('Global audio save failed:', error);
+    if (error) {
+        if (isTableMissingError(error)) {
+            logMissingTableWarning('global_audio_cache', 'Saving audio cache');
+        } else {
+            console.warn('Global audio save failed:', error);
+        }
+    }
   }
 };
 
@@ -414,21 +528,31 @@ export const saveCachedAudio = async (text: string, audioBase64: string) => {
 // --- Chat History API ---
 
 export const saveChatMessage = async (msg: ChatMessage) => {
-  const userId = await getUserId();
-  if (!userId) return;
+  try {
+    const userId = await getUserId();
+    if (!userId) return;
 
-  const { error } = await supabase.from('chat_history').insert({
-    id: msg.id,
-    user_id: userId,
-    role: msg.role,
-    text: msg.text,
-    image: msg.image,
-    audio: msg.audio,
-    grounding_urls: msg.groundingUrls,
-    timestamp: Date.now()
-  });
+    const { error } = await supabase.from('chat_history').insert({
+      id: msg.id,
+      user_id: userId,
+      role: msg.role,
+      text: msg.text,
+      image: msg.image,
+      audio: msg.audio,
+      grounding_urls: msg.groundingUrls,
+      timestamp: Date.now()
+    });
 
-  if (error) console.error('Error saving chat message:', error);
+    if (error) {
+        if (isTableMissingError(error)) {
+            logMissingTableWarning('chat_history', 'Saving chat message');
+        } else {
+            console.error('Error saving chat message:', error);
+        }
+    }
+  } catch (e) {
+    console.error("Network/Unexpected error in saveChatMessage:", e);
+  }
 };
 
 export const updateMessageAudio = async (msgId: string, audioBase64: string) => {
@@ -441,33 +565,48 @@ export const updateMessageAudio = async (msgId: string, audioBase64: string) => 
     .eq('id', msgId)
     .eq('user_id', userId);
 
-  if (error) console.error('Error updating message audio:', error);
+  if (error) {
+      if (isTableMissingError(error)) {
+          logMissingTableWarning('chat_history', 'Updating message audio');
+      } else {
+          console.error('Error updating message audio:', error);
+      }
+  }
 };
 
 export const getChatHistory = async (): Promise<ChatMessage[]> => {
-  const userId = await getUserId();
-  if (!userId) return [];
-  
-  const { data, error } = await supabase
-    .from('chat_history')
-    .select('*')
-    .eq('user_id', userId)
-    .order('timestamp', { ascending: true })
-    .limit(50);
+  try {
+    const userId = await getUserId();
+    if (!userId) return [];
+    
+    const { data, error } = await supabase
+      .from('chat_history')
+      .select('*')
+      .eq('user_id', userId)
+      .order('timestamp', { ascending: true })
+      .limit(50);
 
-  if (error) {
-    console.error('Error fetching chat history:', error);
+    if (error) {
+      if (isTableMissingError(error)) {
+          logMissingTableWarning('chat_history', 'Fetching chat history');
+          return [];
+      }
+      console.error('Error fetching chat history:', error);
+      return [];
+    }
+
+    return data.map((d: any) => ({
+      id: d.id,
+      role: d.role,
+      text: d.text,
+      image: d.image,
+      audio: d.audio,
+      groundingUrls: d.grounding_urls
+    }));
+  } catch (e) {
+    console.error("Network/Unexpected error in getChatHistory:", e);
     return [];
   }
-
-  return data.map((d: any) => ({
-    id: d.id,
-    role: d.role,
-    text: d.text,
-    image: d.image,
-    audio: d.audio,
-    groundingUrls: d.grounding_urls
-  }));
 };
 
 export const clearChatHistory = async () => {
@@ -479,7 +618,13 @@ export const clearChatHistory = async () => {
     .delete()
     .eq('user_id', userId);
 
-  if (error) console.error('Error clearing chat history:', error);
+  if (error) {
+      if (isTableMissingError(error)) {
+          logMissingTableWarning('chat_history', 'Clearing chat history');
+      } else {
+          console.error('Error clearing chat history:', error);
+      }
+  }
 };
 
 // --- Pronunciation History ---
@@ -502,35 +647,50 @@ export const savePronunciationAttempt = async (attempt: PronunciationAttempt) =>
     timestamp: attempt.timestamp
   });
 
-  if (error) console.error('Error saving pronunciation:', error);
+  if (error) {
+      if (isTableMissingError(error)) {
+          logMissingTableWarning('pronunciation_history', 'Saving pronunciation');
+      } else {
+          console.error('Error saving pronunciation:', error);
+      }
+  }
 };
 
 export const getPronunciationHistory = async (word: string): Promise<PronunciationAttempt[]> => {
-  const userId = await getUserId();
-  if (!userId) return [];
+  try {
+    const userId = await getUserId();
+    if (!userId) return [];
 
-  const { data, error } = await supabase
-    .from('pronunciation_history')
-    .select('*')
-    .eq('user_id', userId)
-    .eq('word', word)
-    .order('timestamp', { ascending: false })
-    .limit(10);
+    const { data, error } = await supabase
+      .from('pronunciation_history')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('word', word)
+      .order('timestamp', { ascending: false })
+      .limit(10);
 
-  if (error) {
-    console.error('Error fetching pronunciation history:', error);
+    if (error) {
+      if (isTableMissingError(error)) {
+          logMissingTableWarning('pronunciation_history', 'Fetching pronunciation history');
+          return [];
+      }
+      console.error('Error fetching pronunciation history:', error);
+      return [];
+    }
+
+    return data.map((d: any) => ({
+      word: d.word,
+      heard: d.heard,
+      pinyin: d.pinyin,
+      score: d.score,
+      feedback: d.feedback,
+      audio: d.audio,
+      timestamp: d.timestamp
+    }));
+  } catch (e) {
+    console.error("Network/Unexpected error in getPronunciationHistory:", e);
     return [];
   }
-
-  return data.map((d: any) => ({
-    word: d.word,
-    heard: d.heard,
-    pinyin: d.pinyin,
-    score: d.score,
-    feedback: d.feedback,
-    audio: d.audio,
-    timestamp: d.timestamp
-  }));
 };
 
 // --- Goals & Daily Progress ---
@@ -548,11 +708,16 @@ export const saveUserGoals = async (goals: UserGoals) => {
     updated_at: new Date().toISOString()
   });
 
-  if (error) console.error('Error saving goals:', error);
+  if (error) {
+      if (isTableMissingError(error)) {
+          logMissingTableWarning('user_goals', 'Saving goals');
+      } else {
+          console.error('Error saving goals:', error);
+      }
+  }
 };
 
 export const getUserGoals = async (): Promise<UserGoals> => {
-  const userId = await getUserId();
   const defaultGoals: UserGoals = { 
     dailyWords: 10, 
     dailyMinutes: 15,
@@ -560,22 +725,42 @@ export const getUserGoals = async (): Promise<UserGoals> => {
     dailyPronunciation: 10
   };
 
-  if (!userId) return defaultGoals;
+  try {
+    const userId = await getUserId();
+    if (!userId) return defaultGoals;
 
-  const { data, error } = await supabase
-    .from('user_goals')
-    .select('*')
-    .eq('user_id', userId)
-    .single();
+    const { data, error } = await supabase
+      .from('user_goals')
+      .select('*')
+      .eq('user_id', userId)
+      .single();
 
-  if (error || !data) return defaultGoals;
+    if (error) {
+        if (isTableMissingError(error)) {
+            logMissingTableWarning('user_goals', 'Fetching goals');
+            return defaultGoals;
+        }
+        // PGRST116 is "The result contains 0 rows", which is fine, return defaults
+        if (error.code !== 'PGRST116' && !isNetworkError(error)) {
+            console.error('Error fetching goals:', error);
+        }
+        return defaultGoals;
+    }
+    
+    if (!data) return defaultGoals;
 
-  return {
-    dailyWords: data.daily_words,
-    dailyMinutes: data.daily_minutes,
-    dailySpeakingMinutes: data.daily_speaking_minutes,
-    dailyPronunciation: data.daily_pronunciation
-  };
+    return {
+      dailyWords: data.daily_words,
+      dailyMinutes: data.daily_minutes,
+      dailySpeakingMinutes: data.daily_speaking_minutes,
+      dailyPronunciation: data.daily_pronunciation
+    };
+  } catch (e) {
+    if (!isNetworkError(e)) {
+        console.error("Network/Unexpected error in getUserGoals:", e);
+    }
+    return defaultGoals;
+  }
 };
 
 export const updateStudyTime = async (minutes: number) => {
@@ -585,12 +770,18 @@ export const updateStudyTime = async (minutes: number) => {
   const dateKey = new Date().toISOString().split('T')[0];
 
   // Fetch current stats for today
-  const { data: current } = await supabase
+  const { data: current, error: fetchError } = await supabase
     .from('daily_stats')
     .select('minutes_spent')
     .eq('user_id', userId)
     .eq('date', dateKey)
     .single();
+
+  if (fetchError && !isTableMissingError(fetchError) && fetchError.code !== 'PGRST116') {
+      if (!isNetworkError(fetchError)) {
+          console.warn("Error fetching daily stats:", fetchError);
+      }
+  }
 
   const currentMinutes = current?.minutes_spent || 0;
 
@@ -600,34 +791,33 @@ export const updateStudyTime = async (minutes: number) => {
     minutes_spent: currentMinutes + minutes
   }, { onConflict: 'user_id, date' });
 
-  if (error) console.error('Error updating study time:', error);
+  if (error) {
+      if (isTableMissingError(error)) {
+          logMissingTableWarning('daily_stats', 'Updating study time');
+      } else {
+          console.error('Error updating study time:', error);
+      }
+  }
 };
 
 export const updateSpeakingTime = async (minutes: number) => {
-  // We don't have a separate column for speaking minutes in daily_stats schema I created?
-  // I created: minutes_spent, words_reviewed.
-  // I should have added speaking_minutes.
-  // I will assume minutes_spent includes speaking time, or I should update the schema again.
-  // The UserGoals has dailySpeakingMinutes.
-  // Let's assume minutes_spent is total time.
-  // But wait, getDailyProgress returns speakingMinutes.
-  // I should update the schema to include speaking_minutes.
-  
-  // For now, I'll just update minutes_spent as a fallback, or better, add the column.
-  // I'll add the column to the schema in the next step if I can, but I'm writing this file now.
-  // I'll assume the column `speaking_minutes` exists in `daily_stats` and update the schema later.
-  
   const userId = await getUserId();
   if (!userId) return;
 
   const dateKey = new Date().toISOString().split('T')[0];
 
-  const { data: current } = await supabase
+  const { data: current, error: fetchError } = await supabase
     .from('daily_stats')
-    .select('speaking_minutes') // Assuming I add this
+    .select('speaking_minutes') 
     .eq('user_id', userId)
     .eq('date', dateKey)
     .single();
+
+  if (fetchError && !isTableMissingError(fetchError) && fetchError.code !== 'PGRST116') {
+      if (!isNetworkError(fetchError)) {
+          console.warn("Error fetching daily stats:", fetchError);
+      }
+  }
 
   const currentSpeaking = current?.speaking_minutes || 0;
 
@@ -637,37 +827,63 @@ export const updateSpeakingTime = async (minutes: number) => {
     speaking_minutes: currentSpeaking + minutes
   }, { onConflict: 'user_id, date' });
 
-  if (error) console.error('Error updating speaking time:', error);
+  if (error) {
+      if (isTableMissingError(error)) {
+          logMissingTableWarning('daily_stats', 'Updating speaking time');
+      } else {
+          console.error('Error updating speaking time:', error);
+      }
+  }
 };
 
 export const getDailyProgress = async (): Promise<DailyProgress> => {
-  const userId = await getUserId();
-  if (!userId) return { minutesSpent: 0, wordsReviewed: 0, speakingMinutes: 0, pronunciationCount: 0 };
+  const defaultProgress = { minutesSpent: 0, wordsReviewed: 0, speakingMinutes: 0, pronunciationCount: 0 };
+  try {
+    const userId = await getUserId();
+    if (!userId) return defaultProgress;
 
-  const dateKey = new Date().toISOString().split('T')[0];
-  const startOfDay = new Date(dateKey).getTime();
+    const dateKey = new Date().toISOString().split('T')[0];
+    const startOfDay = new Date(dateKey).getTime();
 
-  // 1. Get Time Stats
-  const { data: stats } = await supabase
-    .from('daily_stats')
-    .select('minutes_spent, words_reviewed, speaking_minutes') // Assuming speaking_minutes
-    .eq('user_id', userId)
-    .eq('date', dateKey)
-    .single();
+    // 1. Get Time Stats
+    const { data: stats, error: statsError } = await supabase
+      .from('daily_stats')
+      .select('minutes_spent, words_reviewed, speaking_minutes')
+      .eq('user_id', userId)
+      .eq('date', dateKey)
+      .single();
 
-  // 2. Get Pronunciation Count (count rows today)
-  const { count: pronCount } = await supabase
-    .from('pronunciation_history')
-    .select('id', { count: 'exact', head: true })
-    .eq('user_id', userId)
-    .gte('timestamp', startOfDay);
+    if (statsError && !isTableMissingError(statsError) && statsError.code !== 'PGRST116') {
+        if (!isNetworkError(statsError)) {
+           console.warn("Error fetching daily stats:", statsError);
+        }
+    }
 
-  return {
-    minutesSpent: stats?.minutes_spent || 0,
-    wordsReviewed: stats?.words_reviewed || 0,
-    speakingMinutes: stats?.speaking_minutes || 0,
-    pronunciationCount: pronCount || 0
-  };
+    // 2. Get Pronunciation Count (count rows today)
+    const { count: pronCount, error: pronError } = await supabase
+      .from('pronunciation_history')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .gte('timestamp', startOfDay);
+
+    if (pronError && !isTableMissingError(pronError)) {
+        if (!isNetworkError(pronError)) {
+           console.warn("Error fetching pronunciation count:", pronError);
+        }
+    }
+
+    return {
+      minutesSpent: stats?.minutes_spent || 0,
+      wordsReviewed: stats?.words_reviewed || 0,
+      speakingMinutes: stats?.speaking_minutes || 0,
+      pronunciationCount: pronCount || 0
+    };
+  } catch (e) {
+    if (!isNetworkError(e)) {
+        console.error("Network/Unexpected error in getDailyProgress:", e);
+    }
+    return defaultProgress;
+  }
 };
 
 // --- Offline Batches API (Local Only) ---

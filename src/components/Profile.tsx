@@ -38,6 +38,11 @@ const Profile: React.FC<Props> = ({ user, language, level, setLanguage, setLevel
   const [aiProvider, setLocalAIProvider] = useState<AIProvider>(getAIProvider());
   const [deepseekKey, setDeepseekKey] = useState(localStorage.getItem('deepseek_api_key') || '');
   const [keySaved, setKeySaved] = useState(false);
+  
+  // Image Provider Settings
+  const [imageProvider, setImageProvider] = useState<string>(localStorage.getItem('image_provider') || 'gemini');
+  const [leonardoKey, setLeonardoKey] = useState(localStorage.getItem('leonardo_api_key') || '');
+  const [leonardoKeySaved, setLeonardoKeySaved] = useState(false);
 
   const theme = getLevelTheme(level);
 
@@ -50,6 +55,18 @@ const Profile: React.FC<Props> = ({ user, language, level, setLanguage, setLevel
     localStorage.setItem('deepseek_api_key', deepseekKey);
     setKeySaved(true);
     setTimeout(() => setKeySaved(false), 2000);
+  };
+
+  const saveLeonardoKey = () => {
+    localStorage.setItem('leonardo_api_key', leonardoKey);
+    setLeonardoKeySaved(true);
+    setTimeout(() => setLeonardoKeySaved(false), 2000);
+  };
+
+  const handleImageProviderChange = (provider: string) => {
+      setImageProvider(provider);
+      localStorage.setItem('image_provider', provider);
+      window.location.reload();
   };
 
   useEffect(() => {
@@ -149,24 +166,24 @@ const Profile: React.FC<Props> = ({ user, language, level, setLanguage, setLevel
 
                   {/* AI Provider Settings */}
                   <div className="pt-4 border-t border-gray-100">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">AI Provider</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Text AI Provider</label>
                     <div className="flex space-x-2 mb-3">
                       <button 
                         onClick={() => handleProviderChange('gemini')}
                         className={`flex-1 py-2 rounded-lg text-sm font-bold transition-colors ${aiProvider === 'gemini' ? 'bg-blue-100 text-blue-700 border border-blue-200' : 'bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100'}`}
                       >
-                        Gemini (Default)
+                        Gemini
                       </button>
                       <button 
                         onClick={() => handleProviderChange('deepseek')}
                         className={`flex-1 py-2 rounded-lg text-sm font-bold transition-colors ${aiProvider === 'deepseek' ? 'bg-blue-100 text-blue-700 border border-blue-200' : 'bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100'}`}
                       >
-                        DeepSeek V3
+                        DeepSeek
                       </button>
                     </div>
                     
                     {aiProvider === 'deepseek' && (
-                      <div className="animate-fade-in">
+                      <div className="animate-fade-in mb-4">
                         <label className="block text-xs font-medium text-gray-500 mb-1">DeepSeek API Key</label>
                         <div className="flex space-x-2">
                           <input 
@@ -186,6 +203,47 @@ const Profile: React.FC<Props> = ({ user, language, level, setLanguage, setLevel
                         <p className="text-xs text-gray-400 mt-1">Get key from platform.deepseek.com</p>
                       </div>
                     )}
+
+                    {/* Image Provider Settings */}
+                    <div className="pt-4 border-t border-gray-100">
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Image Generation Provider</label>
+                        <div className="flex space-x-2 mb-3">
+                            <button 
+                                onClick={() => handleImageProviderChange('gemini')}
+                                className={`flex-1 py-2 rounded-lg text-sm font-bold transition-colors ${imageProvider !== 'leonardo' ? 'bg-purple-100 text-purple-700 border border-purple-200' : 'bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100'}`}
+                            >
+                                Gemini (Default)
+                            </button>
+                            <button 
+                                onClick={() => handleImageProviderChange('leonardo')}
+                                className={`flex-1 py-2 rounded-lg text-sm font-bold transition-colors ${imageProvider === 'leonardo' ? 'bg-purple-100 text-purple-700 border border-purple-200' : 'bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100'}`}
+                            >
+                                Leonardo.Ai
+                            </button>
+                        </div>
+
+                        {imageProvider === 'leonardo' && (
+                            <div className="animate-fade-in">
+                                <label className="block text-xs font-medium text-gray-500 mb-1">Leonardo API Key</label>
+                                <div className="flex space-x-2">
+                                    <input 
+                                        type="password" 
+                                        value={leonardoKey}
+                                        onChange={(e) => setLeonardoKey(e.target.value)}
+                                        placeholder="Paste key here..."
+                                        className="flex-1 px-3 py-2 rounded-lg border border-gray-200 text-sm focus:ring-2 focus:ring-purple-500 outline-none"
+                                    />
+                                    <button 
+                                        onClick={saveLeonardoKey}
+                                        className={`px-3 py-2 rounded-lg text-sm font-bold text-white transition-colors ${leonardoKeySaved ? 'bg-green-500' : 'bg-gray-900 hover:bg-gray-800'}`}
+                                    >
+                                        {leonardoKeySaved ? 'Saved' : 'Save'}
+                                    </button>
+                                </div>
+                                <p className="text-xs text-gray-400 mt-1">Get key from app.leonardo.ai</p>
+                            </div>
+                        )}
+                    </div>
                   </div>
                </div>
             </div>

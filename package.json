@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "tsx server.ts",
     "build": "tsc && vite build",
     "lint": "tsc --noEmit",
     "preview": "vite preview"
@@ -13,13 +13,16 @@
     "@google/genai": "^1.42.0",
     "@supabase/supabase-js": "^2.98.0",
     "@tailwindcss/vite": "^4.2.0",
+    "@types/express": "^5.0.6",
+    "express": "^5.2.1",
     "idb": "^8.0.3",
     "lucide-react": "^0.574.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-markdown": "^10.1.0",
     "recharts": "^3.7.0",
-    "tailwindcss": "^4.2.0"
+    "tailwindcss": "^4.2.0",
+    "tsx": "^4.21.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

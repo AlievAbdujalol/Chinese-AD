@@ -164,7 +164,7 @@ const SpeakingPractice: React.FC<Props> = ({ language, level }) => {
                 </div>
             ) : targetSentence ? (
                 <>
-                    <p className="text-sm text-gray-400 uppercase tracking-widest mb-4 font-bold">Read Aloud</p>
+                    <p className="text-sm text-gray-400 uppercase tracking-widest mb-4 font-bold">{t.readAloud}</p>
                     <h1 className="text-4xl md:text-5xl font-bold text-gray-800 mb-4 leading-tight">
                         {targetSentence.character}
                     </h1>

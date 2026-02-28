@@ -1,6 +1,6 @@
 import { AppLanguage, HSKLevel, QuizQuestion, ExamData, VocabCard } from "../types";
 
-const API_URL = "https://api.deepseek.com/chat/completions";
+const API_URL = "/api/deepseek";
 
 const getApiKey = () => {
   if (typeof window !== 'undefined') {

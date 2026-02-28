@@ -66,7 +66,8 @@ export const translations = {
       practiceGen: 'Generate Phrase',
       listening: 'Listen',
       recording: 'Hold to Record',
-      feedback: 'Feedback'
+      feedback: 'Feedback',
+      readAloud: 'Read Aloud'
     },
     live: {
       title: 'Live Conversation',
@@ -210,7 +211,8 @@ export const translations = {
       practiceGen: 'Новая фраза',
       listening: 'Слушать',
       recording: 'Удерживайте для записи',
-      feedback: 'Отзыв'
+      feedback: 'Отзыв',
+      readAloud: 'Чтение вслух'
     },
     live: {
       title: 'Разговорная практика',
@@ -354,7 +356,8 @@ export const translations = {
       practiceGen: 'Ибораи нав',
       listening: 'Гӯш кардан',
       recording: 'Барои сабт нигоҳ доред',
-      feedback: 'Натиҷа'
+      feedback: 'Натиҷа',
+      readAloud: 'Хондан бо овоз'
     },
     live: {
       title: 'Машқи зинда',

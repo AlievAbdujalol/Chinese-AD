@@ -165,6 +165,24 @@ export function arrayBufferToBase64(buffer: ArrayBuffer): string {
 }
 
 
+// Helper to check if DeepSeek should be used (provider selected AND key exists)
+const getDeepSeekKey = () => {
+  if (typeof window !== 'undefined') {
+    return localStorage.getItem('deepseek_api_key') || import.meta.env.VITE_DEEPSEEK_API_KEY;
+  }
+  return process.env.DEEPSEEK_API_KEY;
+};
+
+const shouldUseDeepSeek = () => {
+  if (getAIProvider() !== 'deepseek') return false;
+  const key = getDeepSeekKey();
+  if (!key) {
+    console.warn("DeepSeek provider selected but no API key found. Falling back to Gemini.");
+    return false;
+  }
+  return true;
+};
+
 // --- Text & Vision ---
 export async function generateTutorResponse(
   history: { role: string; parts: any[] }[],
@@ -175,7 +193,7 @@ export async function generateTutorResponse(
   useSearch: boolean,
   useThinking: boolean
 ) {
-  if (getAIProvider() === 'deepseek') {
+  if (shouldUseDeepSeek()) {
     return generateTutorResponseDS(history, message, lang, level);
   }
 
@@ -250,7 +268,7 @@ export async function generateTutorResponse(
 
 // ... generateQuiz, generateMockExam, generateVocabularyBatch (Unchanged)
 export async function generateQuiz(topic: string, level: HSKLevel, lang: AppLanguage): Promise<QuizQuestion[]> {
-  if (getAIProvider() === 'deepseek') {
+  if (shouldUseDeepSeek()) {
     return generateQuizDS(topic, level, lang);
   }
 
@@ -289,7 +307,7 @@ export async function generateQuiz(topic: string, level: HSKLevel, lang: AppLang
 }
 
 export async function generateMockExam(level: HSKLevel, lang: AppLanguage): Promise<ExamData> {
-  if (getAIProvider() === 'deepseek') {
+  if (shouldUseDeepSeek()) {
     return generateMockExamDS(level, lang);
   }
 
@@ -342,7 +360,7 @@ export async function generateMockExam(level: HSKLevel, lang: AppLanguage): Prom
 }
 
 export async function generateVocabularyBatch(level: HSKLevel, lang: AppLanguage): Promise<VocabCard[]> {
-  if (getAIProvider() === 'deepseek') {
+  if (shouldUseDeepSeek()) {
     return generateVocabularyBatchDS(level, lang);
   }
 
@@ -383,7 +401,7 @@ export async function generateVocabularyBatch(level: HSKLevel, lang: AppLanguage
 }
 
 export async function generatePracticeSentence(level: HSKLevel, lang: AppLanguage): Promise<{character: string, pinyin: string, translation: string}> {
-  if (getAIProvider() === 'deepseek') {
+  if (shouldUseDeepSeek()) {
     return generatePracticeSentenceDS(level, lang);
   }
 
@@ -596,7 +614,40 @@ export async function playTextToSpeech(text: string): Promise<void> {
   }
 }
 
+import { generateImageLeonardo } from "./leonardo";
+
+// Helper to check if Leonardo should be used
+const getLeonardoKey = () => {
+  if (typeof window !== 'undefined') {
+    return localStorage.getItem('leonardo_api_key') || import.meta.env.VITE_LEONARDO_API_KEY;
+  }
+  return process.env.LEONARDO_API_KEY;
+};
+
+const shouldUseLeonardo = () => {
+  // If provider is set to 'leonardo' OR (default is gemini but user has a leonardo key and explicitly wants to use it - logic can be refined)
+  // For now, let's assume we add a provider switch for images specifically, or just use the global provider if we want.
+  // But the user request implies adding it as an option.
+  // Let's check a specific setting or just fallback if Gemini fails? 
+  // Better: Check a specific 'image_provider' setting or just use if key exists and provider is 'leonardo' (if we add that option).
+  
+  // For this implementation, let's assume we add 'leonardo' to AIProvider type or a separate ImageProvider type.
+  // Since I haven't updated AIProvider type yet, let's check localStorage directly for now.
+  if (typeof window !== 'undefined') {
+    return localStorage.getItem('image_provider') === 'leonardo' && !!getLeonardoKey();
+  }
+  return false;
+};
+
 export async function generateVisualAid(prompt: string, aspectRatio: string = "1:1", referenceImageBase64?: string): Promise<string | null> {
+  if (shouldUseLeonardo() && !referenceImageBase64) { // Leonardo implementation here only supports text-to-image for now
+      try {
+          return await generateImageLeonardo(prompt);
+      } catch (e) {
+          console.warn("Leonardo generation failed, falling back to Gemini", e);
+      }
+  }
+
   const ai = getAI();
   // Using gemini-3.1-flash-image-preview for high quality generation/editing
   const model = 'gemini-3.1-flash-image-preview';
