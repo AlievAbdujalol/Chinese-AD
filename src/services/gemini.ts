@@ -1,6 +1,26 @@
 
 import { GoogleGenAI, Type, LiveServerMessage, Modality, HarmCategory, HarmBlockThreshold } from "@google/genai";
 import { AppLanguage, HSKLevel, QuizQuestion, ExamData, VocabCard } from "../types";
+import { 
+  generateTutorResponseDS, 
+  generateQuizDS, 
+  generateMockExamDS, 
+  generateVocabularyBatchDS, 
+  generatePracticeSentenceDS 
+} from "./deepseek";
+
+export type AIProvider = 'gemini' | 'deepseek';
+
+export const getAIProvider = (): AIProvider => {
+  if (typeof window !== 'undefined') {
+    return (localStorage.getItem('ai_provider') as AIProvider) || 'gemini';
+  }
+  return 'gemini';
+};
+
+export const setAIProvider = (provider: AIProvider) => {
+  localStorage.setItem('ai_provider', provider);
+};
 
 // Helper to get fresh instance (handling dynamic keys)
 const getAI = () => new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -12,11 +32,20 @@ const LANG_NAMES = {
 };
 
 // --- Error Helper ---
+// ... (keep existing error helper) ...
 
 export function getFriendlyErrorMessage(error: any): string {
   const msg = error?.message || error?.toString() || '';
   const name = error?.name || '';
   
+  // DeepSeek specific errors
+  if (msg.includes('DeepSeek')) {
+    if (msg.includes('401')) return "DeepSeek API Key invalid or missing. Please check Settings.";
+    if (msg.includes('402')) return "DeepSeek API Balance insufficient.";
+    if (msg.includes('503')) return "DeepSeek Service Unavailable.";
+    return `DeepSeek Error: ${msg}`;
+  }
+
   // Microphone / Device Permissions (Check this first)
   if (name === 'NotAllowedError' || 
       name === 'PermissionDeniedError' || 
@@ -25,6 +54,7 @@ export function getFriendlyErrorMessage(error: any): string {
       msg.trim() === 'Permission denied') {
       return "Microphone access denied. Please allow microphone permissions in your browser settings.";
   }
+// ... (rest of error helper) ...
 
   // Quota & Service
   if (msg.includes('429') || msg.includes('Quota')) return "Daily AI quota exceeded. Please try again later.";
@@ -145,6 +175,10 @@ export async function generateTutorResponse(
   useSearch: boolean,
   useThinking: boolean
 ) {
+  if (getAIProvider() === 'deepseek') {
+    return generateTutorResponseDS(history, message, lang, level);
+  }
+
   const ai = getAI();
   const model = useThinking ? 'gemini-3.1-pro-preview' : (useSearch ? 'gemini-3-flash-preview' : 'gemini-3-flash-preview');
   
@@ -216,6 +250,10 @@ export async function generateTutorResponse(
 
 // ... generateQuiz, generateMockExam, generateVocabularyBatch (Unchanged)
 export async function generateQuiz(topic: string, level: HSKLevel, lang: AppLanguage): Promise<QuizQuestion[]> {
+  if (getAIProvider() === 'deepseek') {
+    return generateQuizDS(topic, level, lang);
+  }
+
   const ai = getAI();
   const model = 'gemini-3-flash-preview';
   const prompt = `Generate 5 multiple-choice questions for Chinese learning.
@@ -251,6 +289,10 @@ export async function generateQuiz(topic: string, level: HSKLevel, lang: AppLang
 }
 
 export async function generateMockExam(level: HSKLevel, lang: AppLanguage): Promise<ExamData> {
+  if (getAIProvider() === 'deepseek') {
+    return generateMockExamDS(level, lang);
+  }
+
   const ai = getAI();
   const model = 'gemini-3-flash-preview';
   const prompt = `Generate a mini mock HSK exam for ${level}. 
@@ -300,6 +342,10 @@ export async function generateMockExam(level: HSKLevel, lang: AppLanguage): Prom
 }
 
 export async function generateVocabularyBatch(level: HSKLevel, lang: AppLanguage): Promise<VocabCard[]> {
+  if (getAIProvider() === 'deepseek') {
+    return generateVocabularyBatchDS(level, lang);
+  }
+
   const ai = getAI();
   const model = 'gemini-3-flash-preview';
   
@@ -337,6 +383,10 @@ export async function generateVocabularyBatch(level: HSKLevel, lang: AppLanguage
 }
 
 export async function generatePracticeSentence(level: HSKLevel, lang: AppLanguage): Promise<{character: string, pinyin: string, translation: string}> {
+  if (getAIProvider() === 'deepseek') {
+    return generatePracticeSentenceDS(level, lang);
+  }
+
   const ai = getAI();
   const model = 'gemini-3-flash-preview';
   const prompt = `Generate one simple, natural Chinese sentence (5-10 chars) for HSK level ${level}.

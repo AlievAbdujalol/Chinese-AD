@@ -10,6 +10,8 @@ import { getLevelTheme } from '../utils/theme';
 import LearnedWordsList from './LearnedWordsList';
 import DeployGuide from './DeployGuide';
 
+import { getAIProvider, setAIProvider, AIProvider } from '../services/gemini';
+
 interface Props {
   user: User;
   language: AppLanguage;
@@ -32,7 +34,23 @@ const Profile: React.FC<Props> = ({ user, language, level, setLanguage, setLevel
   const [showLearnedWords, setShowLearnedWords] = useState(false);
   const [showDeployGuide, setShowDeployGuide] = useState(false);
   
+  // AI Settings
+  const [aiProvider, setLocalAIProvider] = useState<AIProvider>(getAIProvider());
+  const [deepseekKey, setDeepseekKey] = useState(localStorage.getItem('deepseek_api_key') || '');
+  const [keySaved, setKeySaved] = useState(false);
+
   const theme = getLevelTheme(level);
+
+  const handleProviderChange = (p: AIProvider) => {
+    setLocalAIProvider(p);
+    setAIProvider(p);
+  };
+
+  const saveDeepseekKey = () => {
+    localStorage.setItem('deepseek_api_key', deepseekKey);
+    setKeySaved(true);
+    setTimeout(() => setKeySaved(false), 2000);
+  };
 
   useEffect(() => {
     const loadData = async () => {
@@ -87,42 +105,6 @@ const Profile: React.FC<Props> = ({ user, language, level, setLanguage, setLevel
            </div>
         </div>
 
-        {/* Stats Grid */}
-        <div>
-          <h3 className="text-lg font-bold text-gray-700 mb-4 flex items-center">
-             <Award className="mr-2 text-red-500" size={20} />
-             {t.stats}
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-             <div 
-               onClick={() => setShowLearnedWords(true)}
-               className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 text-center cursor-pointer hover:shadow-md transition-shadow"
-             >
-                <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center mx-auto mb-3">
-                   <BookOpen size={24} />
-                </div>
-                <div className="text-3xl font-bold text-gray-900">{stats.totalWords}</div>
-                <div className="text-sm text-gray-500">{t.wordsLearned}</div>
-             </div>
-             
-             <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 text-center">
-                <div className="w-12 h-12 bg-orange-50 text-orange-600 rounded-xl flex items-center justify-center mx-auto mb-3">
-                   <Award size={24} />
-                </div>
-                <div className="text-3xl font-bold text-gray-900">{stats.quizAverage}%</div>
-                <div className="text-sm text-gray-500">{t.quizAvg}</div>
-             </div>
-
-             <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 text-center">
-                <div className="w-12 h-12 bg-purple-50 text-purple-600 rounded-xl flex items-center justify-center mx-auto mb-3">
-                   <FileText size={24} />
-                </div>
-                <div className="text-3xl font-bold text-gray-900">{stats.examsTaken}</div>
-                <div className="text-sm text-gray-500">{t.examsTaken}</div>
-             </div>
-          </div>
-        </div>
-
         {/* Settings */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             {/* App Settings */}
@@ -163,6 +145,47 @@ const Profile: React.FC<Props> = ({ user, language, level, setLanguage, setLevel
                       </select>
                       <Globe className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400 pointer-events-none" size={18} />
                     </div>
+                  </div>
+
+                  {/* AI Provider Settings */}
+                  <div className="pt-4 border-t border-gray-100">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">AI Provider</label>
+                    <div className="flex space-x-2 mb-3">
+                      <button 
+                        onClick={() => handleProviderChange('gemini')}
+                        className={`flex-1 py-2 rounded-lg text-sm font-bold transition-colors ${aiProvider === 'gemini' ? 'bg-blue-100 text-blue-700 border border-blue-200' : 'bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100'}`}
+                      >
+                        Gemini (Default)
+                      </button>
+                      <button 
+                        onClick={() => handleProviderChange('deepseek')}
+                        className={`flex-1 py-2 rounded-lg text-sm font-bold transition-colors ${aiProvider === 'deepseek' ? 'bg-blue-100 text-blue-700 border border-blue-200' : 'bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100'}`}
+                      >
+                        DeepSeek V3
+                      </button>
+                    </div>
+                    
+                    {aiProvider === 'deepseek' && (
+                      <div className="animate-fade-in">
+                        <label className="block text-xs font-medium text-gray-500 mb-1">DeepSeek API Key</label>
+                        <div className="flex space-x-2">
+                          <input 
+                            type="password" 
+                            value={deepseekKey}
+                            onChange={(e) => setDeepseekKey(e.target.value)}
+                            placeholder="sk-..."
+                            className="flex-1 px-3 py-2 rounded-lg border border-gray-200 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                          />
+                          <button 
+                            onClick={saveDeepseekKey}
+                            className={`px-3 py-2 rounded-lg text-sm font-bold text-white transition-colors ${keySaved ? 'bg-green-500' : 'bg-gray-900 hover:bg-gray-800'}`}
+                          >
+                            {keySaved ? 'Saved' : 'Save'}
+                          </button>
+                        </div>
+                        <p className="text-xs text-gray-400 mt-1">Get key from platform.deepseek.com</p>
+                      </div>
+                    )}
                   </div>
                </div>
             </div>

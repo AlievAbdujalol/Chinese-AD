@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import './index.css';
+import ErrorBoundary from './components/ErrorBoundary';
 
 // Debug logs to confirm script is executing
 console.log('Starting app mount...');
@@ -20,7 +21,9 @@ try {
   const root = ReactDOM.createRoot(rootElement);
   console.log('Root created. Calling root.render()...');
   root.render(
-    <App />
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
   );
   console.log('App mounted successfully.');
 } catch (error) {
