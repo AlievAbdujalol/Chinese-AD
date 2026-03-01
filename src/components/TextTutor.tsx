@@ -8,6 +8,7 @@ import { ChatMessage, AppLanguage, HSKLevel, PronunciationAttempt, VocabCard } f
 import { translations } from '../utils/translations';
 import { TutorContext, TutorContextType } from '../contexts/TutorContext';
 import { ChineseWord } from './ChineseWord';
+import { PronunciationFeedback } from './PronunciationFeedback';
 
 interface Props {
   language: AppLanguage;
@@ -670,13 +671,26 @@ const TextTutor: React.FC<Props> = ({ language, level, initialTutorMode, onTutor
                 {msg.image && (
                     <img src={msg.image} alt="User upload" className="max-w-full h-auto rounded mb-2 max-h-48 object-cover" />
                 )}
-                <div className={`prose ${msg.role === 'user' ? 'prose-invert' : 'text-gray-800'} max-w-none`}>
-                    <ReactMarkdown components={markdownComponents}>
-                    {msg.text}
-                    </ReactMarkdown>
-                </div>
                 
-                {msg.role === 'model' && (
+                {/* Check for Pronunciation Feedback Format */}
+                {msg.role === 'model' && msg.text.includes('**Score**:') && msg.text.includes('**Heard**:') ? (
+                    <PronunciationFeedback 
+                        feedbackText={msg.text} 
+                        onRetry={() => {
+                            // Extract the target word if possible, or just open mic
+                            // The target is usually in the user's previous message or we can just let them record freely
+                            handleWordRecord(""); 
+                        }}
+                    />
+                ) : (
+                    <div className={`prose ${msg.role === 'user' ? 'prose-invert' : 'text-gray-800'} max-w-none`}>
+                        <ReactMarkdown components={markdownComponents}>
+                        {msg.text}
+                        </ReactMarkdown>
+                    </div>
+                )}
+                
+                {msg.role === 'model' && !msg.text.includes('**Score**:') && (
                     <div className="flex items-center space-x-2 mt-2 flex-wrap">
                     <button 
                         onClick={() => {

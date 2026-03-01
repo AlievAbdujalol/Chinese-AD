@@ -625,16 +625,16 @@ const getLeonardoKey = () => {
 };
 
 const shouldUseLeonardo = () => {
-  // If provider is set to 'leonardo' OR (default is gemini but user has a leonardo key and explicitly wants to use it - logic can be refined)
-  // For now, let's assume we add a provider switch for images specifically, or just use the global provider if we want.
-  // But the user request implies adding it as an option.
-  // Let's check a specific setting or just fallback if Gemini fails? 
-  // Better: Check a specific 'image_provider' setting or just use if key exists and provider is 'leonardo' (if we add that option).
+  // Check if Leonardo key exists
+  const hasKey = !!getLeonardoKey();
   
-  // For this implementation, let's assume we add 'leonardo' to AIProvider type or a separate ImageProvider type.
-  // Since I haven't updated AIProvider type yet, let's check localStorage directly for now.
   if (typeof window !== 'undefined') {
-    return localStorage.getItem('image_provider') === 'leonardo' && !!getLeonardoKey();
+    const provider = localStorage.getItem('image_provider');
+    // Use Leonardo if:
+    // 1. Provider is explicitly set to 'leonardo' AND key exists
+    // 2. Provider is NOT set (default) BUT key exists (auto-detect preference for Leonardo if key is provided)
+    if (provider === 'leonardo' && hasKey) return true;
+    if (!provider && hasKey) return true;
   }
   return false;
 };
@@ -643,8 +643,12 @@ export async function generateVisualAid(prompt: string, aspectRatio: string = "1
   if (shouldUseLeonardo() && !referenceImageBase64) { // Leonardo implementation here only supports text-to-image for now
       try {
           return await generateImageLeonardo(prompt);
-      } catch (e) {
-          console.warn("Leonardo generation failed, falling back to Gemini", e);
+      } catch (e: any) {
+          console.error("Leonardo generation failed:", e);
+          // If the user explicitly selected Leonardo, throw the error so they know it failed.
+          // If it was auto-detected, we might want to fall back, but for now let's be explicit to debug the 403 issue.
+          // The user specifically asked to use Leonardo, so if it fails, we should tell them why.
+          throw new Error(`Leonardo AI Error: ${e.message || e}`);
       }
   }
 

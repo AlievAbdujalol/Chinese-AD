@@ -56,11 +56,14 @@ const Login: React.FC<Props> = ({ onGuestLogin }) => {
       console.error(err);
       let message = err.message || "Authentication failed.";
       
-      if (message.includes("Invalid login credentials")) {
-        // Auto-switch to Sign Up if user doesn't exist (likely case for new users)
-        // But we can't be 100% sure it's not just a wrong password.
-        // Let's change the message to be very clear.
-        message = "Login failed. If you don't have an account, please use the 'Sign Up' tab.";
+      // Handle specific Supabase errors
+      if (message.includes("Invalid login credentials") || message.includes("invalid_grant")) {
+        message = "Incorrect email or password. If you are new, please use the 'Sign Up' tab.";
+      } else if (message.includes("User already registered")) {
+        message = "This email is already registered. Please Sign In instead.";
+        setIsSignUp(false); // Auto-switch to Sign In
+      } else if (message.includes("Email not confirmed")) {
+        message = "Please confirm your email address before logging in. Check your inbox.";
       } else if (message.includes("Failed to fetch")) {
         message = "Network error. Please check your internet connection or try again later.";
       }
