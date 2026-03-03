@@ -5,7 +5,7 @@ import { HSKLevel, AppLanguage } from '../types';
 import { translations } from '../utils/translations';
 import { getRecentResults, getVocabStats, getGoalAdvice, getDailyProgress, getUserGoals } from '../services/db';
 import { getLevelTheme } from '../utils/theme';
-import { Target, Clock, BookOpen, Mic, MessageSquare } from 'lucide-react';
+import { Target, Clock, BookOpen, Mic, MessageSquare, Settings, ChevronRight } from 'lucide-react';
 
 interface Props {
   level: HSKLevel;
@@ -16,7 +16,7 @@ const Dashboard: React.FC<Props> = ({ level, language }) => {
   const t = translations[language].dashboard;
   const [vocabData, setVocabData] = useState<any[]>([]);
   const [quizData, setQuizData] = useState<any[]>([]);
-  const [advice, setAdvice] = useState<string>('Loading...');
+  const [advice, setAdvice] = useState<string>(t.loading);
   const [progress, setProgress] = useState({ wordsReviewed: 0, minutesSpent: 0, speakingMinutes: 0, pronunciationCount: 0 });
   const [goals, setGoals] = useState({ dailyWords: 10, dailyMinutes: 15, dailySpeakingMinutes: 5, dailyPronunciation: 10 });
   
@@ -95,25 +95,18 @@ const Dashboard: React.FC<Props> = ({ level, language }) => {
                 </div>
             </div>
             
-            {/* Time */}
-            <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between h-32">
+            {/* Study Plan / Project Setup */}
+            <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between h-32 cursor-pointer hover:shadow-md transition-shadow" onClick={() => window.location.hash = '#/profile'}>
                 <div className="flex justify-between items-start">
                    <div className="w-10 h-10 rounded-full bg-orange-50 flex items-center justify-center text-orange-500">
-                      <Clock size={20} />
+                      <Settings size={20} />
                    </div>
-                   <span className="text-xs font-bold uppercase text-gray-400 tracking-wider">{t.timeGoal}</span>
+                   <span className="text-xs font-bold uppercase text-gray-400 tracking-wider">{t.studyPlan}</span>
                 </div>
-                <div>
-                    <div className="flex justify-between items-end mb-2">
-                        <span className="text-2xl font-bold text-gray-900">{progress.minutesSpent}</span>
-                        <span className="text-sm text-gray-400 font-medium">/ {goals.dailyMinutes}</span>
-                    </div>
-                    <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
-                        <div 
-                          className="bg-orange-500 h-full rounded-full transition-all duration-1000 ease-out"
-                          style={{ width: `${calcPercentage(progress.minutesSpent, goals.dailyMinutes)}%` }}
-                        ></div>
-                    </div>
+                <div className="flex items-center justify-center h-full">
+                    <span className="text-sm font-bold text-orange-500 flex items-center">
+                        {t.editPlan} <ChevronRight size={16} />
+                    </span>
                 </div>
             </div>
 
@@ -166,11 +159,11 @@ const Dashboard: React.FC<Props> = ({ level, language }) => {
 
        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 min-w-0 flex flex-col">
-             <h3 className="font-bold text-lg mb-4 text-gray-700">{t.vocab} (Last 7 Days)</h3>
+             <h3 className="font-bold text-lg mb-4 text-gray-700">{t.vocab} {t.last7Days}</h3>
              {/* Robust container for Recharts to calculate dimensions correctly */}
              <div className="w-full h-[300px] min-w-0 relative">
                {vocabData.length > 0 ? (
-                 <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                 <ResponsiveContainer width="100%" height="100%" debounce={50} minWidth={0}>
                    <BarChart data={vocabData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
                       <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#9ca3af', fontSize: 12}} dy={10} />
@@ -184,18 +177,18 @@ const Dashboard: React.FC<Props> = ({ level, language }) => {
                  </ResponsiveContainer>
                ) : (
                  <div className="flex items-center justify-center h-full text-gray-400 bg-gray-50 rounded-xl border border-dashed border-gray-200">
-                    No vocabulary data yet
+                    {t.noVocabData}
                  </div>
                )}
              </div>
           </div>
 
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 min-w-0 flex flex-col">
-             <h3 className="font-bold text-lg mb-4 text-gray-700">{t.quizPerf} (Recent)</h3>
+             <h3 className="font-bold text-lg mb-4 text-gray-700">{t.quizPerf} {t.recent}</h3>
              {/* Robust container for Recharts to calculate dimensions correctly */}
              <div className="w-full h-[300px] min-w-0 relative">
                {quizData.length > 0 ? (
-                 <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                 <ResponsiveContainer width="100%" height="100%" debounce={50} minWidth={0}>
                    <LineChart data={quizData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
                       <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#9ca3af', fontSize: 12}} dy={10} />
@@ -203,7 +196,7 @@ const Dashboard: React.FC<Props> = ({ level, language }) => {
                       <Tooltip 
                         contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
                         labelFormatter={() => ''}
-                        formatter={(value: any, name: any, props: any) => [`${value}%`, props.payload.type === 'exam' ? 'Exam' : 'Quiz']} 
+                        formatter={(value: any, name: any, props: any) => [`${value}%`, props.payload.type === 'exam' ? t.chartExam : t.chartQuiz]} 
                       />
                       <Line 
                         type="monotone" 
@@ -217,7 +210,7 @@ const Dashboard: React.FC<Props> = ({ level, language }) => {
                  </ResponsiveContainer>
                ) : (
                  <div className="flex items-center justify-center h-full text-gray-400 bg-gray-50 rounded-xl border border-dashed border-gray-200">
-                    No results yet
+                    {t.noResults}
                  </div>
                )}
              </div>

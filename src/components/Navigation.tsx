@@ -11,9 +11,10 @@ interface NavSidebarProps {
   setMode: (mode: AppMode) => void;
   onClose?: () => void;
   user: any | null;
+  t: any;
 }
 
-const NavSidebar: React.FC<NavSidebarProps> = ({ navItems, currentMode, setMode, onClose, user }) => {
+const NavSidebar: React.FC<NavSidebarProps> = ({ navItems, currentMode, setMode, onClose, user, t }) => {
   const baseClass = "flex items-center p-3 mb-2 rounded-lg cursor-pointer transition-colors";
   const activeClass = "bg-red-600 text-white shadow-md";
   const inactiveClass = "text-gray-600 hover:bg-red-50 hover:text-red-600";
@@ -77,17 +78,17 @@ const NavSidebar: React.FC<NavSidebarProps> = ({ navItems, currentMode, setMode,
                       <p className="text-xs font-bold text-gray-800 truncate">{userName}</p>
                       <div className="flex items-center text-xs text-green-600">
                           <Cloud size={10} className="mr-1" />
-                          Cloud Sync
+                          {t.cloudSync}
                       </div>
                   </div>
               </div>
               <button 
                 onClick={logout}
                 className="flex items-center p-3 rounded-lg cursor-pointer transition-colors text-gray-500 hover:bg-gray-100 w-full"
-                title="Sign Out"
+                title={t.signOut}
               >
                 <LogOut size={20} />
-                <span className="ml-3 font-medium">Sign Out</span>
+                <span className="ml-3 font-medium">{t.signOut}</span>
               </button>
            </div>
         </div>
@@ -113,13 +114,13 @@ const Navigation: React.FC<Props> = ({ currentMode, setMode, language, user, isO
     { mode: AppMode.PROFILE, icon: <User size={20} />, label: t.profile },
     { mode: AppMode.TUTOR, icon: <MessageCircle size={20} />, label: t.tutor },
     { mode: AppMode.LIVE, icon: <Mic size={20} />, label: t.live },
-    { mode: AppMode.SPEAKING, icon: <Volume2 size={20} />, label: 'Speaking' },
+    { mode: AppMode.SPEAKING, icon: <Volume2 size={20} />, label: t.speaking },
     { mode: AppMode.VISUALS, icon: <ImageIcon size={20} />, label: t.visuals },
     { mode: AppMode.VOCAB, icon: <BookOpen size={20} />, label: t.vocab },
     { mode: AppMode.BOOKMARKS, icon: <Star size={20} />, label: t.bookmarks },
     { mode: AppMode.QUIZ, icon: <GraduationCap size={20} />, label: t.quiz },
     { mode: AppMode.EXAM, icon: <FileText size={20} />, label: t.exam },
-    { mode: AppMode.DOWNLOADS, icon: <Download size={20} />, label: 'Downloads' },
+    { mode: AppMode.DOWNLOADS, icon: <Download size={20} />, label: t.downloads },
   ];
 
   return (
@@ -131,6 +132,7 @@ const Navigation: React.FC<Props> = ({ currentMode, setMode, language, user, isO
           currentMode={currentMode} 
           setMode={setMode} 
           user={user} 
+          t={t}
           // No onClose for desktop
         />
       </div>
@@ -145,6 +147,7 @@ const Navigation: React.FC<Props> = ({ currentMode, setMode, language, user, isO
               setMode={setMode} 
               onClose={onClose} 
               user={user} 
+              t={t}
             />
           </div>
         </div>

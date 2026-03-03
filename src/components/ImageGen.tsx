@@ -90,7 +90,7 @@ const ImageGen: React.FC<Props> = ({ language = AppLanguage.EN }) => {
       setImage(result);
     } catch (e: any) {
       if (e.toString().includes("403") || e.toString().includes("PERMISSION_DENIED") || e.toString().includes("The caller does not have permission")) {
-         setError("Please select a paid API Key project to use high-quality image generation.");
+         setError(t.apiKeyError);
          if ((window as any).aistudio) {
             try {
                 (window as any).aistudio.openSelectKey();
@@ -223,7 +223,7 @@ const ImageGen: React.FC<Props> = ({ language = AppLanguage.EN }) => {
                          </div>
                      )) : (
                          <div className="text-sm text-gray-400 italic px-2">
-                            {templateCategory === 'saved' ? "No saved prompts yet. Type a prompt and click the save icon." : "No templates available."}
+                            {templateCategory === 'saved' ? t.noSavedPrompts : t.noTemplates}
                          </div>
                      )}
                  </div>
@@ -232,7 +232,7 @@ const ImageGen: React.FC<Props> = ({ language = AppLanguage.EN }) => {
            
            {/* Image Upload Section */}
            <div>
-               <label className="block text-sm font-bold text-gray-700 mb-2 ml-1">{t.uploadLabel || "Reference Image"}</label>
+               <label className="block text-sm font-bold text-gray-700 mb-2 ml-1">{t.referenceImage}</label>
                {selectedImage ? (
                    <div className="relative w-full h-40 bg-gray-50 rounded-2xl overflow-hidden border border-gray-200 group">
                        <img src={selectedImage} alt="Reference" className="w-full h-full object-contain p-2" />
@@ -249,7 +249,7 @@ const ImageGen: React.FC<Props> = ({ language = AppLanguage.EN }) => {
                        className="w-full h-24 border-2 border-dashed border-blue-300 bg-blue-50/30 rounded-2xl flex flex-col items-center justify-center text-gray-500 hover:border-red-400 hover:text-red-500 hover:bg-red-50 transition-all"
                     >
                        <Upload size={24} className="mb-1 text-blue-400" />
-                       <span className="text-sm font-medium">{t.uploadLabel || "Upload Image"}</span>
+                       <span className="text-sm font-medium">{t.uploadImage}</span>
                     </button>
                )}
                <input

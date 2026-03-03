@@ -86,9 +86,9 @@ const Profile: React.FC<Props> = ({ user, language, level, setLanguage, setLevel
   };
 
   const getAccountType = () => {
-    if (user.id === 'guest') return 'Guest Session';
-    if (user.app_metadata?.provider === 'google') return 'Google Account';
-    return 'Email Account';
+    if (user.id === 'guest') return t.guestSession;
+    if (user.app_metadata?.provider === 'google') return t.googleAccount;
+    return t.emailAccount;
   };
 
   const userAvatar = user.user_metadata?.avatar_url || user.user_metadata?.picture;
@@ -115,7 +115,7 @@ const Profile: React.FC<Props> = ({ user, language, level, setLanguage, setLevel
            </div>
            <div className="flex-1 text-center md:text-left">
               <h2 className="text-2xl font-bold text-gray-900">{userName}</h2>
-              <p className="text-gray-500 mb-2">{user.email || 'No email linked'}</p>
+              <p className="text-gray-500 mb-2">{user.email || t.noEmail}</p>
               <div className="inline-flex items-center px-3 py-1 rounded-full bg-green-50 text-green-700 text-xs font-medium border border-green-100">
                 {getAccountType()}
               </div>
@@ -135,7 +135,7 @@ const Profile: React.FC<Props> = ({ user, language, level, setLanguage, setLevel
                    onClick={() => (window as any).aistudio?.openSelectKey?.()}
                    className="text-blue-500 hover:text-blue-600 text-sm font-medium hover:underline"
                  >
-                   Add an API key for all users, to save money.
+                   {t.addApiKey}
                  </button>
                </div>
                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-6 h-full">
@@ -166,7 +166,7 @@ const Profile: React.FC<Props> = ({ user, language, level, setLanguage, setLevel
 
                   {/* AI Provider Settings */}
                   <div className="pt-4 border-t border-gray-100">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Text AI Provider</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">{t.textProvider}</label>
                     <div className="flex space-x-2 mb-3">
                       <button 
                         onClick={() => handleProviderChange('gemini')}
@@ -184,7 +184,7 @@ const Profile: React.FC<Props> = ({ user, language, level, setLanguage, setLevel
                     
                     {aiProvider === 'deepseek' && (
                       <div className="animate-fade-in mb-4">
-                        <label className="block text-xs font-medium text-gray-500 mb-1">DeepSeek API Key</label>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">{t.deepseekKey}</label>
                         <div className="flex space-x-2">
                           <input 
                             type="password" 
@@ -197,50 +197,50 @@ const Profile: React.FC<Props> = ({ user, language, level, setLanguage, setLevel
                             onClick={saveDeepseekKey}
                             className={`px-3 py-2 rounded-lg text-sm font-bold text-white transition-colors ${keySaved ? 'bg-green-500' : 'bg-gray-900 hover:bg-gray-800'}`}
                           >
-                            {keySaved ? 'Saved' : 'Save'}
+                            {keySaved ? t.saved : t.save}
                           </button>
                         </div>
-                        <p className="text-xs text-gray-400 mt-1">Get key from platform.deepseek.com</p>
+                        <p className="text-xs text-gray-400 mt-1">{t.getKey} platform.deepseek.com</p>
                       </div>
                     )}
 
                     {/* Image Provider Settings */}
                     <div className="pt-4 border-t border-gray-100">
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Image Generation Provider</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">{t.imageProvider}</label>
                         <div className="flex space-x-2 mb-3">
                             <button 
                                 onClick={() => handleImageProviderChange('gemini')}
                                 className={`flex-1 py-2 rounded-lg text-sm font-bold transition-colors ${imageProvider !== 'leonardo' ? 'bg-purple-100 text-purple-700 border border-purple-200' : 'bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100'}`}
                             >
-                                Gemini (Default)
+                                {t.geminiDefault}
                             </button>
                             <button 
                                 onClick={() => handleImageProviderChange('leonardo')}
                                 className={`flex-1 py-2 rounded-lg text-sm font-bold transition-colors ${imageProvider === 'leonardo' ? 'bg-purple-100 text-purple-700 border border-purple-200' : 'bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100'}`}
                             >
-                                Leonardo.Ai
+                                {t.leonardoAi}
                             </button>
                         </div>
 
                         {imageProvider === 'leonardo' && (
                             <div className="animate-fade-in">
-                                <label className="block text-xs font-medium text-gray-500 mb-1">Leonardo API Key</label>
+                                <label className="block text-xs font-medium text-gray-500 mb-1">{t.leonardoKey}</label>
                                 <div className="flex space-x-2">
                                     <input 
                                         type="password" 
                                         value={leonardoKey}
                                         onChange={(e) => setLeonardoKey(e.target.value)}
-                                        placeholder="Paste key here..."
+                                        placeholder={t.pasteKey}
                                         className="flex-1 px-3 py-2 rounded-lg border border-gray-200 text-sm focus:ring-2 focus:ring-purple-500 outline-none"
                                     />
                                     <button 
                                         onClick={saveLeonardoKey}
                                         className={`px-3 py-2 rounded-lg text-sm font-bold text-white transition-colors ${leonardoKeySaved ? 'bg-green-500' : 'bg-gray-900 hover:bg-gray-800'}`}
                                     >
-                                        {leonardoKeySaved ? 'Saved' : 'Save'}
+                                        {leonardoKeySaved ? t.saved : t.save}
                                     </button>
                                 </div>
-                                <p className="text-xs text-gray-400 mt-1">Get key from app.leonardo.ai</p>
+                                <p className="text-xs text-gray-400 mt-1">{t.getKey} app.leonardo.ai</p>
                             </div>
                         )}
                     </div>
@@ -307,7 +307,7 @@ const Profile: React.FC<Props> = ({ user, language, level, setLanguage, setLevel
                     onClick={handleGoalSave}
                     className={`w-full py-3 rounded-xl font-bold text-white transition-all ${goalsSaved ? 'bg-green-500' : 'bg-red-600 hover:bg-red-700'}`}
                   >
-                    {goalsSaved ? 'Saved!' : t.saveGoals}
+                    {goalsSaved ? t.saved : t.saveGoals}
                   </button>
                </div>
             </div>
@@ -331,7 +331,7 @@ const Profile: React.FC<Props> = ({ user, language, level, setLanguage, setLevel
              className="flex items-center text-gray-500 hover:text-blue-600 font-medium px-4 py-2 rounded-lg hover:bg-blue-50 transition-colors text-sm w-full md:w-auto justify-center"
            >
               <Cloud size={18} className="mr-2" />
-              How to Deploy for Free
+              {t.deployGuide}
            </button>
         </div>
 

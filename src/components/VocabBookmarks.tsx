@@ -142,10 +142,10 @@ const VocabBookmarks: React.FC<Props> = ({ language, level }) => {
                    </button>
                 </div>
 
-                <span className="text-gray-400 text-sm uppercase tracking-widest mb-4">Character</span>
+                <span className="text-gray-400 text-sm uppercase tracking-widest mb-4">{t.character}</span>
                 <h2 className="text-8xl font-bold text-gray-800 mb-8">{card.character}</h2>
                 <div className="text-gray-400 text-sm mt-8 opacity-0 group-hover:opacity-100 transition-opacity flex items-center">
-                  <RotateCw size={14} className="mr-1" /> Tap to flip
+                  <RotateCw size={14} className="mr-1" /> {t.tapToFlip}
                 </div>
              </div>
 
@@ -178,14 +178,14 @@ const VocabBookmarks: React.FC<Props> = ({ language, level }) => {
           disabled={currentIndex === 0}
           className={`py-4 rounded-xl font-bold flex items-center justify-center transition-colors ${currentIndex === 0 ? 'bg-gray-100 text-gray-400' : 'bg-white text-gray-800 hover:bg-gray-50 border border-gray-200'}`}
         >
-          <ArrowLeft size={20} className="mr-2" /> Prev
+          <ArrowLeft size={20} className="mr-2" /> {t.prev}
         </button>
         <button 
           onClick={nextCard}
           disabled={currentIndex === cards.length - 1}
           className={`py-4 rounded-xl font-bold flex items-center justify-center transition-colors ${currentIndex === cards.length - 1 ? 'bg-gray-100 text-gray-400' : 'bg-gray-900 text-white hover:bg-gray-800'}`}
         >
-          Next <ArrowRight size={20} className="ml-2" />
+          {t.next} <ArrowRight size={20} className="ml-2" />
         </button>
       </div>
     </div>

@@ -76,16 +76,16 @@ const OfflineManager: React.FC<Props> = ({ language, level }) => {
     }
   };
 
-  const t = translations[language];
+  const t = translations[language].tutor.downloads;
 
   return (
     <div className="h-full flex flex-col p-6 bg-gray-50 overflow-y-auto">
       <div className="max-w-4xl mx-auto w-full">
         <div className="flex items-center justify-between mb-8">
-          <h2 className="text-2xl font-bold text-gray-800">Offline Downloads</h2>
+          <h2 className="text-2xl font-bold text-gray-800">{t.title}</h2>
           <div className={`flex items-center px-3 py-1 rounded-full text-sm font-bold ${isOnline ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-600'}`}>
             {isOnline ? <Wifi size={16} className="mr-2" /> : <WifiOff size={16} className="mr-2" />}
-            {isOnline ? 'Online' : 'Offline Mode'}
+            {isOnline ? t.online : t.offline}
           </div>
         </div>
 
@@ -95,15 +95,15 @@ const OfflineManager: React.FC<Props> = ({ language, level }) => {
             <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mb-4">
               <BookOpen size={24} />
             </div>
-            <h3 className="font-bold text-gray-800 mb-2">Vocabulary</h3>
-            <p className="text-sm text-gray-500 mb-4">Download a batch of 10 words for {level}.</p>
+            <h3 className="font-bold text-gray-800 mb-2">{t.vocabTitle}</h3>
+            <p className="text-sm text-gray-500 mb-4">{t.vocabDesc} {level}.</p>
             <button
               onClick={() => handleDownload('vocab')}
               disabled={!isOnline || loading}
               className={`w-full py-2 rounded-lg font-bold flex items-center justify-center transition-colors ${!isOnline ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
             >
               {downloadingType === 'vocab' ? <Loader size={18} className="animate-spin" /> : <Download size={18} className="mr-2" />}
-              Download
+              {t.download}
             </button>
           </div>
 
@@ -112,15 +112,15 @@ const OfflineManager: React.FC<Props> = ({ language, level }) => {
             <div className="w-12 h-12 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center mb-4">
               <GraduationCap size={24} />
             </div>
-            <h3 className="font-bold text-gray-800 mb-2">Quiz</h3>
-            <p className="text-sm text-gray-500 mb-4">Download a 5-question quiz for {level}.</p>
+            <h3 className="font-bold text-gray-800 mb-2">{t.quizTitle}</h3>
+            <p className="text-sm text-gray-500 mb-4">{t.quizDesc} {level}.</p>
             <button
               onClick={() => handleDownload('quiz')}
               disabled={!isOnline || loading}
               className={`w-full py-2 rounded-lg font-bold flex items-center justify-center transition-colors ${!isOnline ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-purple-600 text-white hover:bg-purple-700'}`}
             >
               {downloadingType === 'quiz' ? <Loader size={18} className="animate-spin" /> : <Download size={18} className="mr-2" />}
-              Download
+              {t.download}
             </button>
           </div>
 
@@ -129,25 +129,25 @@ const OfflineManager: React.FC<Props> = ({ language, level }) => {
             <div className="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mb-4">
               <FileText size={24} />
             </div>
-            <h3 className="font-bold text-gray-800 mb-2">Mock Exam</h3>
-            <p className="text-sm text-gray-500 mb-4">Download a full mock exam for {level}.</p>
+            <h3 className="font-bold text-gray-800 mb-2">{t.examTitle}</h3>
+            <p className="text-sm text-gray-500 mb-4">{t.examDesc} {level}.</p>
             <button
               onClick={() => handleDownload('exam')}
               disabled={!isOnline || loading}
               className={`w-full py-2 rounded-lg font-bold flex items-center justify-center transition-colors ${!isOnline ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-red-600 text-white hover:bg-red-700'}`}
             >
               {downloadingType === 'exam' ? <Loader size={18} className="animate-spin" /> : <Download size={18} className="mr-2" />}
-              Download
+              {t.download}
             </button>
           </div>
         </div>
 
-        <h3 className="text-xl font-bold text-gray-800 mb-4">Downloaded Content</h3>
+        <h3 className="text-xl font-bold text-gray-800 mb-4">{t.downloaded}</h3>
         
         {batches.length === 0 ? (
           <div className="text-center py-12 bg-white rounded-xl border border-gray-100 text-gray-500">
             <Download size={48} className="mx-auto mb-4 opacity-20" />
-            <p>No downloads yet. Connect to the internet to download content.</p>
+            <p>{t.noDownloads}</p>
           </div>
         ) : (
           <div className="space-y-3">
@@ -172,7 +172,7 @@ const OfflineManager: React.FC<Props> = ({ language, level }) => {
                 </div>
                 <div className="flex items-center space-x-2">
                   <span className="text-xs bg-green-50 text-green-600 px-2 py-1 rounded-full flex items-center">
-                    <CheckCircle size={12} className="mr-1" /> Ready
+                    <CheckCircle size={12} className="mr-1" /> {t.ready}
                   </span>
                   <button 
                     onClick={() => handleDelete(batch.id)}

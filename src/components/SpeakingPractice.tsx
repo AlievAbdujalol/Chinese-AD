@@ -22,7 +22,8 @@ const SpeakingPractice: React.FC<Props> = ({ language, level }) => {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
 
-  const t = translations[language].tutor; // Reuse tutor translations or add new ones
+  const t = translations[language].tutor.speaking;
+  const tTutor = translations[language].tutor;
 
   const loadNewSentence = async () => {
     setLoading(true);
@@ -34,7 +35,7 @@ const SpeakingPractice: React.FC<Props> = ({ language, level }) => {
       setTargetSentence(sentence);
     } catch (e) {
       console.error(e);
-      setError("Failed to load sentence. Please try again.");
+      setError(t.loadFailed);
     } finally {
       setLoading(false);
     }
@@ -51,7 +52,7 @@ const SpeakingPractice: React.FC<Props> = ({ language, level }) => {
       await playRawAudio(buffer);
     } catch (e) {
       console.error(e);
-      setError("Failed to play audio.");
+      setError(t.playFailed);
     }
   };
 
@@ -80,7 +81,7 @@ const SpeakingPractice: React.FC<Props> = ({ language, level }) => {
       setError(null);
     } catch (e) {
       console.error(e);
-      setError("Microphone access denied.");
+      setError(t.micDenied);
     }
   };
 
@@ -130,7 +131,7 @@ const SpeakingPractice: React.FC<Props> = ({ language, level }) => {
       reader.readAsDataURL(audioBlob);
     } catch (e) {
       console.error(e);
-      setError("Evaluation failed.");
+      setError(t.evalFailed);
     } finally {
       setEvaluating(false);
     }
@@ -142,7 +143,7 @@ const SpeakingPractice: React.FC<Props> = ({ language, level }) => {
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-2xl font-bold text-gray-800 flex items-center">
             <Mic className="mr-2 text-red-600" />
-            Speaking Practice
+            {translations[language].nav.speaking}
           </h2>
           <div className="px-3 py-1 bg-red-100 text-red-800 text-xs font-bold rounded-full">
             {level}
@@ -160,11 +161,11 @@ const SpeakingPractice: React.FC<Props> = ({ language, level }) => {
             {loading ? (
                 <div className="py-12 flex flex-col items-center">
                     <RefreshCw className="animate-spin text-red-600 mb-4" size={32} />
-                    <p className="text-gray-500">Generating sentence...</p>
+                    <p className="text-gray-500">{t.generating}</p>
                 </div>
             ) : targetSentence ? (
                 <>
-                    <p className="text-sm text-gray-400 uppercase tracking-widest mb-4 font-bold">{t.readAloud}</p>
+                    <p className="text-sm text-gray-400 uppercase tracking-widest mb-4 font-bold">{tTutor.readAloud}</p>
                     <h1 className="text-4xl md:text-5xl font-bold text-gray-800 mb-4 leading-tight">
                         {targetSentence.character}
                     </h1>
@@ -175,7 +176,7 @@ const SpeakingPractice: React.FC<Props> = ({ language, level }) => {
                         <button 
                             onClick={playTargetAudio}
                             className="p-4 rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-red-600 transition-colors"
-                            title="Listen to native pronunciation"
+                            title={t.listenNative}
                         >
                             <Volume2 size={24} />
                         </button>
@@ -184,7 +185,7 @@ const SpeakingPractice: React.FC<Props> = ({ language, level }) => {
                             <button 
                                 onClick={startRecording}
                                 className="p-6 rounded-full bg-red-600 text-white hover:bg-red-700 shadow-lg hover:shadow-red-200 transition-all transform hover:scale-105"
-                                title="Start Recording"
+                                title={t.startRecord}
                             >
                                 <Mic size={32} />
                             </button>
@@ -192,19 +193,19 @@ const SpeakingPractice: React.FC<Props> = ({ language, level }) => {
                             <button 
                                 onClick={stopRecording}
                                 className="p-6 rounded-full bg-red-100 text-red-600 animate-pulse ring-4 ring-red-50"
-                                title="Stop Recording"
+                                title={t.stopRecord}
                             >
                                 <Square size={32} fill="currentColor" />
                             </button>
                         )}
                     </div>
                     
-                    {recording && <p className="text-red-500 font-bold mt-4 animate-pulse">Recording...</p>}
+                    {recording && <p className="text-red-500 font-bold mt-4 animate-pulse">{t.recording}</p>}
                 </>
             ) : (
                 <div className="py-12">
                     <button onClick={loadNewSentence} className="text-red-600 font-bold hover:underline">
-                        Load Sentence
+                        {t.loadSentence}
                     </button>
                 </div>
             )}
@@ -220,12 +221,12 @@ const SpeakingPractice: React.FC<Props> = ({ language, level }) => {
                     {evaluating ? (
                         <>
                             <RefreshCw size={18} className="mr-2 animate-spin" />
-                            Analyzing...
+                            {t.analyzing}
                         </>
                     ) : (
                         <>
                             <Award size={18} className="mr-2" />
-                            Check Pronunciation
+                            {t.check}
                         </>
                     )}
                 </button>
@@ -235,25 +236,25 @@ const SpeakingPractice: React.FC<Props> = ({ language, level }) => {
         {feedback && (
             <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-6 animate-fade-in">
                 <div className="flex items-center justify-between mb-6 border-b border-gray-100 pb-4">
-                    <h3 className="text-lg font-bold text-gray-800">Feedback</h3>
+                    <h3 className="text-lg font-bold text-gray-800">{t.feedback}</h3>
                     <div className={`px-4 py-1 rounded-full text-sm font-bold flex items-center ${
                         feedback.score >= 8 ? 'bg-green-100 text-green-700' : 
                         feedback.score >= 5 ? 'bg-yellow-100 text-yellow-700' : 
                         'bg-red-100 text-red-700'
                     }`}>
                         {feedback.score >= 8 ? <CheckCircle size={16} className="mr-1" /> : <AlertCircle size={16} className="mr-1" />}
-                        Score: {feedback.score}/10
+                        {t.score}: {feedback.score}/10
                     </div>
                 </div>
 
                 <div className="grid md:grid-cols-2 gap-6 mb-6">
                     <div>
-                        <p className="text-xs text-gray-400 uppercase font-bold mb-1">AI Heard</p>
+                        <p className="text-xs text-gray-400 uppercase font-bold mb-1">{t.aiHeard}</p>
                         <p className="text-xl font-bold text-gray-800">{feedback.heard}</p>
                         <p className="text-gray-500">{feedback.pinyin}</p>
                     </div>
                     <div>
-                        <p className="text-xs text-gray-400 uppercase font-bold mb-1">Analysis</p>
+                        <p className="text-xs text-gray-400 uppercase font-bold mb-1">{t.analysis}</p>
                         <p className="text-gray-700 leading-relaxed text-sm">{feedback.feedback}</p>
                     </div>
                 </div>
@@ -262,7 +263,7 @@ const SpeakingPractice: React.FC<Props> = ({ language, level }) => {
                     onClick={loadNewSentence}
                     className="w-full py-3 rounded-xl border-2 border-gray-100 text-gray-600 font-bold hover:border-red-100 hover:text-red-600 hover:bg-red-50 transition-all"
                 >
-                    Next Sentence
+                    {t.next}
                 </button>
             </div>
         )}

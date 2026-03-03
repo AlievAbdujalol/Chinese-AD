@@ -653,8 +653,8 @@ export async function generateVisualAid(prompt: string, aspectRatio: string = "1
   }
 
   const ai = getAI();
-  // Using gemini-3.1-flash-image-preview for high quality generation/editing
-  const model = 'gemini-3.1-flash-image-preview';
+  // Using gemini-2.5-flash-image as default to avoid permission issues with preview models
+  const model = 'gemini-2.5-flash-image';
   
   const parts: any[] = [{ text: prompt }];
   if (referenceImageBase64) {
@@ -673,8 +673,7 @@ export async function generateVisualAid(prompt: string, aspectRatio: string = "1
         contents: { parts },
         config: {
           imageConfig: {
-            aspectRatio: aspectRatio as any, 
-            imageSize: "1K"
+            aspectRatio: aspectRatio as any
           }
         }
       });
@@ -695,8 +694,8 @@ export async function generateVisualAid(prompt: string, aspectRatio: string = "1
 // Function to generate Beijing-themed photos from user uploads
 export async function transformImageToBeijing(imageBase64: string): Promise<string> {
   const ai = getAI();
-  // Using gemini-3.1-flash-image-preview for better reliability with image edits and prompt adherence
-  const model = 'gemini-3.1-flash-image-preview';
+  // Using gemini-2.5-flash-image as default to avoid permission issues with preview models
+  const model = 'gemini-2.5-flash-image';
   
   const prompt = `Generate a realistic photo of this person visiting a famous landmark in Beijing, China (like the Forbidden City, Summer Palace, or Great Wall). 
   The person from the input image should be integrated naturally into the Beijing scene. 
@@ -719,8 +718,7 @@ export async function transformImageToBeijing(imageBase64: string): Promise<stri
         },
         config: {
           imageConfig: {
-            aspectRatio: "1:1",
-            imageSize: "1K"
+            aspectRatio: "1:1"
           }
         }
       });

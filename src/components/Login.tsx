@@ -1,13 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { loginEmailPassword, registerEmailPassword, signInWithGoogle, supabase } from '../services/supabase';
-import { LogIn, UserPlus, User, HelpCircle } from 'lucide-react';
+import { LogIn, UserPlus, User, HelpCircle, Globe } from 'lucide-react';
 import ConfigHelp from './ConfigHelp';
+import { AppLanguage } from '../types';
+import { translations } from '../utils/translations';
 
 interface Props {
   onGuestLogin?: () => void;
+  language: AppLanguage;
+  setLanguage: (lang: AppLanguage) => void;
 }
 
-const Login: React.FC<Props> = ({ onGuestLogin }) => {
+const Login: React.FC<Props> = ({ onGuestLogin, language, setLanguage }) => {
+  const t = translations[language].login;
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -36,7 +41,7 @@ const Login: React.FC<Props> = ({ onGuestLogin }) => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) {
-        setError("Please enter both email and password.");
+        setError(t.enterBoth);
         return;
     }
     
@@ -46,7 +51,7 @@ const Login: React.FC<Props> = ({ onGuestLogin }) => {
     try {
       if (isSignUp) {
         await registerEmailPassword(email, password);
-        setError("Check your email for confirmation link!");
+        setError(t.checkEmail);
       } else {
         await loginEmailPassword(email, password);
       }
@@ -54,18 +59,18 @@ const Login: React.FC<Props> = ({ onGuestLogin }) => {
     } catch (err: any) {
       if (!isMounted.current) return;
       console.error(err);
-      let message = err.message || "Authentication failed.";
+      let message = err.message || t.authFailed;
       
       // Handle specific Supabase errors
       if (message.includes("Invalid login credentials") || message.includes("invalid_grant")) {
-        message = "Incorrect email or password. If you are new, please use the 'Sign Up' tab.";
+        message = t.invalidCreds;
       } else if (message.includes("User already registered")) {
-        message = "This email is already registered. Please Sign In instead.";
+        message = t.alreadyRegistered;
         setIsSignUp(false); // Auto-switch to Sign In
       } else if (message.includes("Email not confirmed")) {
-        message = "Please confirm your email address before logging in. Check your inbox.";
+        message = t.emailNotConfirmed;
       } else if (message.includes("Failed to fetch")) {
-        message = "Network error. Please check your internet connection or try again later.";
+        message = t.networkError;
       }
       
       setFailedAttempts(prev => prev + 1);
@@ -93,7 +98,7 @@ const Login: React.FC<Props> = ({ onGuestLogin }) => {
     } catch (err: any) {
       if (!isMounted.current) return;
       console.error("Google login error:", err);
-      const message = err.message || "Google sign in failed.";
+      const message = err.message || t.googleFailed;
       setError(message);
       setLoading(false);
       
@@ -112,12 +117,28 @@ const Login: React.FC<Props> = ({ onGuestLogin }) => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4 font-sans text-gray-900">
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4 font-sans text-gray-900 relative">
+      {/* Language Switcher */}
+      <div className="absolute top-4 right-4 z-10">
+        <div className="bg-white rounded-full shadow-sm border border-gray-200 p-1 flex items-center">
+            <Globe size={16} className="text-gray-400 ml-2 mr-1" />
+            <select 
+                value={language} 
+                onChange={(e) => setLanguage(e.target.value as AppLanguage)}
+                className="bg-transparent border-none text-sm font-medium text-gray-600 focus:ring-0 cursor-pointer py-1 pr-2"
+            >
+                <option value={AppLanguage.EN}>English</option>
+                <option value={AppLanguage.RU}>Русский</option>
+                <option value={AppLanguage.TJ}>Тоҷикӣ</option>
+            </select>
+        </div>
+      </div>
+
       <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 border border-gray-100">
         <div className="text-center mb-8 relative">
           <button 
             onClick={() => setShowHelp(true)}
-            className="absolute top-0 right-0 text-gray-400 hover:text-blue-500 transition-colors"
+            className="absolute top-0 left-0 text-gray-400 hover:text-blue-500 transition-colors"
             title="Configuration Help"
           >
             <HelpCircle size={20} />
@@ -134,14 +155,14 @@ const Login: React.FC<Props> = ({ onGuestLogin }) => {
             className={`flex-1 pb-2 text-sm font-bold transition-colors ${!isSignUp ? 'text-red-600 border-b-2 border-red-600' : 'text-gray-400 hover:text-gray-600'}`}
             onClick={() => { setIsSignUp(false); setError(''); }}
           >
-            Sign In
+            {t.signIn}
           </button>
           <button
             type="button"
             className={`flex-1 pb-2 text-sm font-bold transition-colors ${isSignUp ? 'text-red-600 border-b-2 border-red-600' : 'text-gray-400 hover:text-gray-600'}`}
             onClick={() => { setIsSignUp(true); setError(''); }}
           >
-            Sign Up
+            {t.signUp}
           </button>
         </div>
 
@@ -156,7 +177,7 @@ const Login: React.FC<Props> = ({ onGuestLogin }) => {
                     onClick={() => { setIsSignUp(true); setError(''); }}
                     className="text-xs font-bold bg-white border border-red-200 px-3 py-2 rounded-lg hover:bg-red-50 transition-colors w-full animate-pulse"
                   >
-                    Switch to Sign Up
+                    {t.switchToSignUp}
                   </button>
                   {onGuestLogin && (
                     <button
@@ -164,7 +185,7 @@ const Login: React.FC<Props> = ({ onGuestLogin }) => {
                       onClick={onGuestLogin}
                       className="text-xs font-bold bg-gray-100 border border-gray-300 px-3 py-2 rounded-lg hover:bg-gray-200 transition-colors w-full flex items-center justify-center"
                     >
-                      <User size={14} className="mr-1" /> Continue as Guest
+                      <User size={14} className="mr-1" /> {t.continueGuest}
                     </button>
                   )}
                 </div>
@@ -173,7 +194,7 @@ const Login: React.FC<Props> = ({ onGuestLogin }) => {
           )}
           
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1 ml-1">Email</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1 ml-1">{t.email}</label>
             <input
               type="email"
               value={email}
@@ -186,14 +207,14 @@ const Login: React.FC<Props> = ({ onGuestLogin }) => {
 
           <div>
             <div className="flex justify-between items-center mb-1">
-              <label className="block text-sm font-medium text-gray-700 ml-1">Password</label>
+              <label className="block text-sm font-medium text-gray-700 ml-1">{t.password}</label>
               {!isSignUp && (
                 <button 
                   type="button"
-                  onClick={() => setError("Please contact support or use the 'Forgot Password' link in the Supabase email if configured.")}
+                  onClick={() => setError(t.contactSupport)}
                   className="text-xs text-red-600 hover:text-red-700 font-medium"
                 >
-                  Forgot Password?
+                  {t.forgotPassword}
                 </button>
               )}
             </div>
@@ -218,7 +239,7 @@ const Login: React.FC<Props> = ({ onGuestLogin }) => {
             ) : (
                 <>
                     {isSignUp ? <UserPlus size={20} className="mr-2" /> : <LogIn size={20} className="mr-2" />}
-                    {isSignUp ? 'Sign Up' : 'Sign In'}
+                    {isSignUp ? t.signUp : t.signIn}
                 </>
             )}
           </button>
@@ -255,7 +276,7 @@ const Login: React.FC<Props> = ({ onGuestLogin }) => {
                         d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
                     />
                 </svg>
-                Continue with Google
+                {t.continueGoogle}
             </button>
 
             {onGuestLogin && (
@@ -265,13 +286,13 @@ const Login: React.FC<Props> = ({ onGuestLogin }) => {
                   className="w-full bg-gray-100 text-gray-700 font-bold py-3.5 rounded-xl border border-transparent transition-colors flex items-center justify-center hover:bg-gray-200"
               >
                   <User size={20} className="mr-2 text-gray-500" />
-                  Continue as Guest
+                  {t.continueGuest}
               </button>
             )}
         </div>
         
         <div className="mt-6 text-center text-xs text-gray-400 border-t border-gray-100 pt-4">
-          Restricted Access • HSK Tutor AI
+          {t.restrictedAccess}
         </div>
       </div>
       

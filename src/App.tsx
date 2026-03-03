@@ -230,7 +230,7 @@ const App: React.FC = () => {
   }
 
   if (!activeUser) {
-    return <Login onGuestLogin={() => setIsGuest(true)} />;
+    return <Login onGuestLogin={() => setIsGuest(true)} language={language} setLanguage={setLanguage} />;
   }
 
   return (

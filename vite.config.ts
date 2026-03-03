@@ -9,6 +9,7 @@ export default defineConfig(({ mode }) => {
       server: {
         port: 3000,
         host: '0.0.0.0',
+        hmr: false, // Disable HMR to prevent websocket errors in preview environment
       },
       plugins: [react(), tailwindcss()],
       define: {

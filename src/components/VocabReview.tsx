@@ -47,7 +47,7 @@ const VocabReview: React.FC<Props> = ({ language, level }) => {
           const batch = batches[0]; // Latest
           setCards(batch.content);
         } else {
-          throw new Error("No offline vocabulary packs found. Please download some when online.");
+          throw new Error(t.noOfflinePacks);
         }
       } else {
         // Online - Generate new
@@ -60,7 +60,7 @@ const VocabReview: React.FC<Props> = ({ language, level }) => {
           const batches = await getOfflineBatches('vocab', level);
           if (batches.length > 0) {
              setCards(batches[0].content);
-             setError("Network error. Loaded offline content instead.");
+             setError(t.networkErrorOffline);
           } else {
              throw genError;
           }
@@ -148,7 +148,7 @@ const VocabReview: React.FC<Props> = ({ language, level }) => {
               await saveVocabCustomImage(updatedCards[currentIndex], fullDataUrl, level);
           } catch (err: any) {
               console.error("Failed to save image", err);
-              setError("Failed to save photo. Please try again.");
+              setError(t.savePhotoFailed);
               setTimeout(() => setError(null), 3000);
           } finally {
               setImageProcessing(false);
@@ -308,7 +308,7 @@ const VocabReview: React.FC<Props> = ({ language, level }) => {
                            </button>
                         </div>
 
-                        <span className="text-gray-500 text-sm uppercase tracking-widest mb-4 font-bold drop-shadow-sm">Character</span>
+                        <span className="text-gray-500 text-sm uppercase tracking-widest mb-4 font-bold drop-shadow-sm">{t.character}</span>
                         {/* Reduced text size to prevent overlap */}
                         <h2 className="text-6xl md:text-7xl font-bold text-gray-800 mb-8 drop-shadow-sm">{card.character}</h2>
                         
@@ -323,7 +323,7 @@ const VocabReview: React.FC<Props> = ({ language, level }) => {
                                         onClick={(e) => { e.stopPropagation(); setShowExample(false); }}
                                         className="mt-2 text-xs text-gray-400 hover:text-red-500 flex items-center"
                                     >
-                                        <EyeOff size={12} className="mr-1" /> Hide example
+                                        <EyeOff size={12} className="mr-1" /> {t.hideExample}
                                     </button>
                                 </div>
                             ) : (
@@ -332,7 +332,7 @@ const VocabReview: React.FC<Props> = ({ language, level }) => {
                                     className="py-2 px-4 rounded-full bg-white/80 text-gray-600 hover:bg-white transition-colors flex items-center text-sm font-medium border border-gray-200 shadow-sm backdrop-blur-sm"
                                 >
                                     <Eye size={16} className="mr-2 text-blue-500" />
-                                    Show Example Sentence
+                                    {t.showExample}
                                 </button>
                             )}
                         </div>
@@ -356,12 +356,12 @@ const VocabReview: React.FC<Props> = ({ language, level }) => {
                                 {imageProcessing ? (
                                     <>
                                       <RefreshCw size={12} className="animate-spin" />
-                                      <span>Saving...</span>
+                                      <span>{t.saving}</span>
                                     </>
                                 ) : (
                                     <>
                                       <ImagePlus size={14} />
-                                      <span>Upload Photo</span>
+                                      <span>{t.uploadPhoto}</span>
                                     </>
                                 )}
                              </button>
@@ -412,7 +412,7 @@ const VocabReview: React.FC<Props> = ({ language, level }) => {
                         onClick={(e) => { e.stopPropagation(); setShowExample(false); }}
                         className="mt-2 text-xs text-gray-400 hover:text-red-500 flex items-center"
                       >
-                         <EyeOff size={12} className="mr-1" /> Hide example
+                         <EyeOff size={12} className="mr-1" /> {t.hideExample}
                       </button>
                     </div>
                   ) : (
@@ -421,7 +421,7 @@ const VocabReview: React.FC<Props> = ({ language, level }) => {
                       className="py-2 px-4 rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors flex items-center text-sm font-medium border border-gray-200"
                     >
                       <Eye size={16} className="mr-2 text-blue-500" />
-                      Show Example Sentence
+                      {t.showExample}
                     </button>
                   )}
                 </div>

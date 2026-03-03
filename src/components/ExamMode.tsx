@@ -65,7 +65,7 @@ const ExamMode: React.FC<Props> = ({ language, level }) => {
           setExamData(batches[0].content);
           setStatus('active');
         } else {
-          throw new Error("No offline exams found. Please download some when online.");
+          throw new Error(t.noOfflineExams);
         }
       } else {
         try {
@@ -78,7 +78,7 @@ const ExamMode: React.FC<Props> = ({ language, level }) => {
           if (batches.length > 0) {
             setExamData(batches[0].content);
             setStatus('active');
-            setError("Network error. Loaded offline exam instead.");
+            setError(t.networkErrorOffline);
           } else {
             throw genError;
           }
@@ -180,7 +180,7 @@ const ExamMode: React.FC<Props> = ({ language, level }) => {
             
             <div className={`${theme.badge} rounded-lg p-4 mb-6 text-sm font-medium`}>
                <p className="font-bold mb-1 text-lg">{level}</p>
-               <p>20 Minutes • Listening, Reading, Grammar</p>
+               <p>{t.examInfo}</p>
             </div>
             <button 
               onClick={startExam}
@@ -253,8 +253,8 @@ const ExamMode: React.FC<Props> = ({ language, level }) => {
                   <span className="font-bold text-gray-500">Q{idx + 1}</span>
                   {status === 'review' && (
                      answers[q.id] === q.correctIndex 
-                       ? <span className="text-green-600 flex items-center"><CheckCircle size={16} className="mr-1"/> Correct</span> 
-                       : <span className="text-red-600 flex items-center"><AlertCircle size={16} className="mr-1"/> Incorrect</span>
+                       ? <span className="text-green-600 flex items-center"><CheckCircle size={16} className="mr-1"/> {t.correct}</span> 
+                       : <span className="text-red-600 flex items-center"><AlertCircle size={16} className="mr-1"/> {t.incorrect}</span>
                   )}
                </div>
 

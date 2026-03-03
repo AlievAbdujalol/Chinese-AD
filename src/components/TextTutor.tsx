@@ -253,40 +253,40 @@ const TextTutor: React.FC<Props> = ({ language, level, initialTutorMode, onTutor
     } catch (error: any) {
       console.error("Tutor Error:", error);
       
-      let errorTitle = "Communication Error";
-      let errorBody = "I encountered an issue while processing your request.";
+      let errorTitle = t.errors.commError;
+      let errorBody = t.errors.commErrorBody;
       let errorIcon = "⚠️";
 
       // Improved Error Mapping
       if (error.message === "EMPTY_RESPONSE_FROM_AI") {
-         errorTitle = "Empty Response";
-         errorBody = "I didn't know how to respond to that. Could you try rephrasing your question or asking about a specific HSK topic?";
+         errorTitle = t.errors.emptyResponse;
+         errorBody = t.errors.emptyResponseBody;
          errorIcon = "😶";
       } else {
          const friendlyMsg = getFriendlyErrorMessage(error);
          
          if (friendlyMsg.includes("Quota")) {
-            errorTitle = "Daily Limit Reached";
-            errorBody = "I've used up my daily thinking capacity. Please try again later or check your plan.";
+            errorTitle = t.errors.dailyLimit;
+            errorBody = t.errors.dailyLimitBody;
             errorIcon = "🛑";
          } else if (friendlyMsg.includes("busy") || friendlyMsg.includes("unavailable")) {
-            errorTitle = "System Overloaded";
-            errorBody = "The AI servers are currently experiencing high traffic. Please wait a few moments and try again.";
+            errorTitle = t.errors.systemOverloaded;
+            errorBody = t.errors.systemOverloadedBody;
             errorIcon = "🔥";
          } else if (friendlyMsg.includes("network") || friendlyMsg.includes("connection") || friendlyMsg.includes("fetch")) {
-            errorTitle = "Network Issue";
-            errorBody = "I couldn't connect to the server. Please check your internet connection.";
+            errorTitle = t.errors.networkIssue;
+            errorBody = t.errors.networkIssueBody;
             errorIcon = "📡";
          } else if (friendlyMsg.includes("safety") || friendlyMsg.includes("blocked")) {
-             errorTitle = "Content Filter";
-             errorBody = "I can't discuss that topic. As a language tutor, I focus on helping you learn Chinese safely.";
+             errorTitle = t.errors.contentFilter;
+             errorBody = t.errors.contentFilterBody;
              errorIcon = "🛡️";
          } else if (friendlyMsg.includes("Access denied")) {
-             errorTitle = "Access Denied";
-             errorBody = "There seems to be an issue with the API key or permissions. Please verify the configuration.";
+             errorTitle = t.errors.accessDenied;
+             errorBody = t.errors.accessDeniedBody;
              errorIcon = "🔐";
          } else {
-             errorBody = friendlyMsg || "An unexpected error occurred. Please try again.";
+             errorBody = friendlyMsg || t.errors.unexpected;
          }
       }
 
@@ -302,7 +302,7 @@ const TextTutor: React.FC<Props> = ({ language, level, initialTutorMode, onTutor
   };
 
   const handleClearHistory = async () => {
-    if (confirm("Are you sure you want to clear the chat history?")) {
+    if (confirm(t.clearHistoryConfirm)) {
         setMessages([]);
         await clearChatHistory();
     }
@@ -359,7 +359,7 @@ const TextTutor: React.FC<Props> = ({ language, level, initialTutorMode, onTutor
                    const audioMsg: ChatMessage = {
                       id: Date.now().toString(),
                       role: 'user',
-                      text: `🎤 *Pronunciation Check*${target ? ` for: "**${target}**"` : ""}`
+                      text: `🎤 *${t.pronunciationCheck}*${target ? ` ${t.forWord}: "**${target}**"` : ""}`
                    };
                    setMessages(prev => [...prev, audioMsg]);
                    saveChatMessage(audioMsg);
@@ -479,9 +479,9 @@ const TextTutor: React.FC<Props> = ({ language, level, initialTutorMode, onTutor
       // Construct friendly message
       let errorMsg = getFriendlyErrorMessage(error);
       if (errorMsg.includes("Quota") || errorMsg.includes("unavailable")) {
-         errorMsg = "AI Voice unavailable (Quota/Net), using system voice.";
+         errorMsg = t.voiceUnavailable;
       } else {
-         errorMsg = "Using system voice fallback.";
+         errorMsg = t.systemVoice;
       }
       
       showGeneralError(errorMsg);
@@ -538,7 +538,7 @@ const TextTutor: React.FC<Props> = ({ language, level, initialTutorMode, onTutor
     } catch (e: any) {
       console.error("Playback failed completely", e);
       speakBrowser(text);
-      showGeneralError("Audio playback failed.");
+      showGeneralError(t.playbackFailed);
     } finally {
       // Only clear if we are still the active message
       setPlayingMsgId(prev => prev === msgId ? null : prev);
@@ -553,7 +553,7 @@ const TextTutor: React.FC<Props> = ({ language, level, initialTutorMode, onTutor
           setHistoryData(data);
       } catch (e) {
           console.error(e);
-          showGeneralError("Failed to fetch history");
+          showGeneralError(t.failedHistory);
       } finally {
           setHistoryLoading(false);
       }
@@ -575,7 +575,7 @@ const TextTutor: React.FC<Props> = ({ language, level, initialTutorMode, onTutor
     
     audio.onended = () => setActiveUserAudio(null);
     audio.onerror = () => {
-        showGeneralError("Failed to play recording.");
+        showGeneralError(t.failedPlay);
         setActiveUserAudio(null);
     };
     
@@ -602,7 +602,7 @@ const TextTutor: React.FC<Props> = ({ language, level, initialTutorMode, onTutor
             <div className="bg-red-50 border border-red-200 rounded-xl shadow-lg p-4 flex items-start gap-3">
                 <AlertCircle className="text-red-600 shrink-0 mt-0.5" size={20} />
                 <div className="flex-1">
-                    <h3 className="text-sm font-bold text-red-800">Attention Needed</h3>
+                    <h3 className="text-sm font-bold text-red-800">{t.attention}</h3>
                     <p className="text-sm text-red-700 mt-1 leading-relaxed">{generalError}</p>
                 </div>
                 <button 
@@ -623,7 +623,7 @@ const TextTutor: React.FC<Props> = ({ language, level, initialTutorMode, onTutor
                 className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all flex items-center ${tutorMode === 'chat' ? 'bg-white text-red-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
               >
                 <Send size={14} className="mr-2" />
-                Chat
+                {t.chat}
               </button>
               <button 
                 onClick={() => {
@@ -633,7 +633,7 @@ const TextTutor: React.FC<Props> = ({ language, level, initialTutorMode, onTutor
                 className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all flex items-center ${tutorMode === 'review' ? 'bg-white text-red-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
               >
                 <BookOpen size={14} className="mr-2" />
-                Flashcards
+                {t.flashcards}
               </button>
           </div>
           
@@ -642,13 +642,13 @@ const TextTutor: React.FC<Props> = ({ language, level, initialTutorMode, onTutor
                   <button 
                     onClick={handleClearHistory}
                     className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"
-                    title="Clear Chat History"
+                    title={t.clearChat}
                   >
                     <Trash2 size={16} />
                   </button>
               )}
               <div className="text-xs font-bold text-gray-400 uppercase tracking-wider hidden sm:block">
-                  {tutorMode === 'chat' ? 'AI Tutor' : 'Vocab Review'}
+                  {tutorMode === 'chat' ? t.chatMode : t.flashcardMode}
               </div>
           </div>
       </div>
@@ -705,7 +705,7 @@ const TextTutor: React.FC<Props> = ({ language, level, initialTutorMode, onTutor
                             ? 'bg-red-100 text-red-600 cursor-wait' 
                             : 'bg-gray-50 hover:bg-gray-100 text-gray-600 border border-gray-200'
                         }`}
-                        title="Read explanation (without Chinese characters)"
+                        title={t.readExplanation}
                     >
                         {playingMsgId === msg.id ? (
                         <RefreshCw size={16} className="animate-spin" />
@@ -745,7 +745,7 @@ const TextTutor: React.FC<Props> = ({ language, level, initialTutorMode, onTutor
                 </div>
                 <div className="ml-3">
                     <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-0.5">{t.imageAttached}</p>
-                    <p className="text-xs text-gray-400">Will be sent with message</p>
+                    <p className="text-xs text-gray-400">{t.willBeSent}</p>
                 </div>
             </div>
             )}
@@ -753,7 +753,7 @@ const TextTutor: React.FC<Props> = ({ language, level, initialTutorMode, onTutor
             <button 
                 onClick={() => fileInputRef.current?.click()}
                 className="p-2 text-gray-500 hover:bg-gray-100 rounded-full"
-                title="Upload Image"
+                title={t.uploadImage}
             >
                 <ImageIcon size={20} />
             </button>
@@ -791,7 +791,7 @@ const TextTutor: React.FC<Props> = ({ language, level, initialTutorMode, onTutor
          {reviewLoading ? (
             <div className="flex flex-col items-center justify-center h-full text-gray-500">
                 <RefreshCw className="animate-spin text-red-600 mb-4" size={40} />
-                <p>Preparing vocabulary for {level}...</p>
+                <p>{t.preparingVocab} {level}...</p>
             </div>
          ) : reviewCompleted ? (
             <div className="flex flex-col items-center justify-center h-full max-w-sm w-full text-center">

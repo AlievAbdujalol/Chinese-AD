@@ -44,7 +44,7 @@ const QuizMode: React.FC<Props> = ({ language, level }) => {
         if (batches.length > 0) {
           setQuestions(batches[0].content);
         } else {
-          throw new Error("No offline quizzes found. Please download some when online.");
+          throw new Error(t.noOfflineQuizzes);
         }
       } else {
         try {
@@ -55,7 +55,7 @@ const QuizMode: React.FC<Props> = ({ language, level }) => {
           const batches = await getOfflineBatches('quiz', level);
           if (batches.length > 0) {
             setQuestions(batches[0].content);
-            setError("Network error. Loaded offline quiz instead.");
+            setError(t.networkErrorOffline);
           } else {
             throw genError;
           }
