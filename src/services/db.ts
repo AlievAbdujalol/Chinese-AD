@@ -26,16 +26,39 @@ interface HSKTutorDB extends DBSchema {
   };
 }
 
-let dbPromise: Promise<IDBPDatabase<HSKTutorDB>>;
+let dbPromise: Promise<IDBPDatabase<HSKTutorDB>> | null = null;
 
-export const initDB = () => {
+export const initDB = async () => {
   if (!dbPromise) {
     dbPromise = openDB<HSKTutorDB>('hsk-tutor-db-v2', 1, {
       upgrade(db) {
-        db.createObjectStore('global_audio', { keyPath: 'text' });
-        const batchStore = db.createObjectStore('offline_batches', { keyPath: 'id' });
-        batchStore.createIndex('by-type-level', ['type', 'level']);
+        if (!db.objectStoreNames.contains('global_audio')) {
+          db.createObjectStore('global_audio', { keyPath: 'text' });
+        }
+        if (!db.objectStoreNames.contains('offline_batches')) {
+          const batchStore = db.createObjectStore('offline_batches', { keyPath: 'id' });
+          batchStore.createIndex('by-type-level', ['type', 'level']);
+        }
       },
+      blocked() {
+        console.warn('IDB blocked');
+      },
+      blocking() {
+        console.warn('IDB blocking');
+        // Close the connection if we're blocking an upgrade
+        if (dbPromise) {
+          dbPromise.then(db => db.close());
+          dbPromise = null;
+        }
+      },
+      terminated() {
+        console.warn('IDB terminated');
+        dbPromise = null;
+      },
+    }).catch(err => {
+      console.warn("Failed to open IDB:", err);
+      dbPromise = null;
+      throw err;
     });
   }
   return dbPromise;

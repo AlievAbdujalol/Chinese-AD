@@ -1,13 +1,7 @@
 import { AppLanguage, HSKLevel, QuizQuestion, ExamData, VocabCard } from "../types";
+import { supabase } from "./supabase";
 
 const API_URL = "/api/deepseek";
-
-const getApiKey = () => {
-  if (typeof window !== 'undefined') {
-    return localStorage.getItem('deepseek_api_key') || import.meta.env.VITE_DEEPSEEK_API_KEY;
-  }
-  return process.env.DEEPSEEK_API_KEY;
-};
 
 const LANG_NAMES = {
   [AppLanguage.RU]: 'Russian',
@@ -15,31 +9,65 @@ const LANG_NAMES = {
   [AppLanguage.EN]: 'English'
 };
 
-async function callDeepSeek(messages: any[], jsonMode: boolean = false) {
-  const apiKey = getApiKey();
-  if (!apiKey) throw new Error("DeepSeek API Key not found. Please set it in Settings.");
+const MAX_RETRIES = 3;
+const INITIAL_DELAY = 1000;
+const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-  const response = await fetch(API_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`
-    },
-    body: JSON.stringify({
-      model: "deepseek-chat",
-      messages,
-      response_format: jsonMode ? { type: "json_object" } : undefined,
-      temperature: 1.3
-    })
-  });
+async function retryOperation<T>(operation: () => Promise<T>): Promise<T> {
+  let lastError: any;
+  for (let i = 0; i < MAX_RETRIES; i++) {
+    try {
+      return await operation();
+    } catch (error: any) {
+      lastError = error;
+      const msg = error?.message || '';
+      
+      if (msg.includes('Unauthorized') || msg.includes('401')) throw error;
 
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`DeepSeek API Error: ${response.status} - ${err}`);
+      const isTransient = msg.includes('503') || msg.includes('429') || msg.includes('Failed to fetch') || msg.includes('NetworkError');
+      if (isTransient) {
+        const delay = INITIAL_DELAY * Math.pow(2, i);
+        await wait(delay);
+        continue;
+      }
+      throw error;
+    }
   }
+  throw lastError;
+}
 
-  const data = await response.json();
-  return data.choices[0].message.content;
+async function callDeepSeek(messages: any[], jsonMode: boolean = false) {
+  return retryOperation(async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json'
+    };
+    
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        model: "deepseek-chat",
+        messages,
+        response_format: jsonMode ? { type: "json_object" } : undefined,
+        temperature: 1.3
+      })
+    });
+
+    if (!response.ok) {
+      const err = await response.text();
+      throw new Error(`DeepSeek API Error: ${response.status} - ${err}`);
+    }
+
+    const data = await response.json();
+    return data.choices[0].message.content;
+  });
 }
 
 export async function generateTutorResponseDS(
