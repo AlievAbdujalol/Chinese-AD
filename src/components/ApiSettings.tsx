@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Key, Save, Trash2, Eye, EyeOff, Check, AlertCircle, RefreshCw } from 'lucide-react';
-import { supabase } from '../services/supabase';
+import { auth } from '../services/firebase';
 
 interface ApiKeyInputProps {
   provider: string;
@@ -122,9 +122,9 @@ const ApiKeyInput: React.FC<ApiKeyInputProps> = ({ provider, label, placeholder,
 const fetchWithRetry = async (url: string, options: RequestInit, retries = 3, delay = 1000): Promise<Response> => {
   try {
     const response = await fetch(url, options);
-    // If 5xx error, throw to trigger retry
-    if (response.status >= 500) {
-      throw new Error(`Server error: ${response.status}`);
+    // Only retry on 502, 504 (gateway errors). Let 500/503 pass through so fallback logic can handle them.
+    if (response.status === 502 || response.status === 504) {
+      throw new Error(`Gateway error: ${response.status}`);
     }
     return response;
   } catch (err: any) {
@@ -148,15 +148,16 @@ const ApiSettings: React.FC = () => {
 
   const fetchKeys = async () => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
+      const user = auth.currentUser;
+      if (!user) {
         setLoading(false);
         return;
       }
+      const token = await user.getIdToken();
 
       const response = await fetchWithRetry('/api/keys', {
         headers: {
-          'Authorization': `Bearer ${session.access_token}`
+          'Authorization': `Bearer ${token}`
         }
       });
       
@@ -180,8 +181,8 @@ const ApiSettings: React.FC = () => {
             }
             // Only show error if no local keys exist, otherwise it's confusing
             if (!localKeys) {
-              // If it's a 503 (DB not configured), show a friendly message instead of "Server Error"
-              if (response.status === 503) {
+              // If it's a 503 or 500 (DB not configured/error), show a friendly message instead of "Server Error"
+              if (response.status === 503 || response.status === 500) {
                  setGlobalError("Using local storage mode (Database not configured).");
               } else {
                  setGlobalError(`${errMsg} (Using local storage fallback)`);
@@ -240,14 +241,15 @@ const ApiSettings: React.FC = () => {
       return;
     }
 
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) throw new Error("Please log in.");
+    const user = auth.currentUser;
+    if (!user) throw new Error("Please log in.");
+    const token = await user.getIdToken();
 
     const response = await fetchWithRetry('/api/keys', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${session.access_token}`
+        'Authorization': `Bearer ${token}`
       },
       body: JSON.stringify({ apiKey, provider })
     });
@@ -271,14 +273,15 @@ const ApiSettings: React.FC = () => {
       return;
     }
 
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) return;
+    const user = auth.currentUser;
+    if (!user) return;
+    const token = await user.getIdToken();
 
     const response = await fetchWithRetry('/api/keys', {
       method: 'DELETE',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${session.access_token}`
+        'Authorization': `Bearer ${token}`
       },
       body: JSON.stringify({ provider })
     });
@@ -296,11 +299,12 @@ const ApiSettings: React.FC = () => {
   const fixDatabase = async () => {
     try {
       setLoading(true);
-      const { data: { session } } = await supabase.auth.getSession();
+      const user = auth.currentUser;
+      const token = user ? await user.getIdToken() : '';
       const response = await fetch('/api/migrate', {
         method: 'POST',
         headers: {
-          'Authorization': session ? `Bearer ${session.access_token}` : ''
+          'Authorization': token ? `Bearer ${token}` : ''
         }
       });
       const data = await response.json();
@@ -321,7 +325,7 @@ const ApiSettings: React.FC = () => {
   if (loading) return <div className="p-6 text-center text-gray-500">Loading settings...</div>;
 
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+    <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-6">
       <div className="flex items-center justify-between mb-6">
         <h3 className="text-lg font-bold text-gray-700 flex items-center">
           <Key className="mr-2 text-gray-500" size={20} />
@@ -363,6 +367,33 @@ const ApiSettings: React.FC = () => {
         label="DeepSeek API Key"
         placeholder="Paste DeepSeek Key (sk-...)"
         currentHint={keys['deepseek'] || null}
+        onSave={saveKey}
+        onDelete={deleteKey}
+      />
+
+      <ApiKeyInput 
+        provider="openai"
+        label="OpenAI API Key"
+        placeholder="Paste OpenAI Key (sk-...)"
+        currentHint={keys['openai'] || null}
+        onSave={saveKey}
+        onDelete={deleteKey}
+      />
+
+      <ApiKeyInput 
+        provider="anthropic"
+        label="Anthropic API Key"
+        placeholder="Paste Anthropic Key (sk-ant-...)"
+        currentHint={keys['anthropic'] || null}
+        onSave={saveKey}
+        onDelete={deleteKey}
+      />
+
+      <ApiKeyInput 
+        provider="leonardo"
+        label="Leonardo API Key"
+        placeholder="Paste Leonardo Key"
+        currentHint={keys['leonardo'] || null}
         onSave={saveKey}
         onDelete={deleteKey}
       />

@@ -1,12 +1,11 @@
 import { Type, HarmCategory, HarmBlockThreshold, Modality } from "@google/genai";
 import { AppLanguage, HSKLevel, QuizQuestion, ExamData, VocabCard } from "../types";
-import { supabase } from "./supabase";
+import { auth } from "./firebase";
 
 // --- Proxy Helper ---
 
 async function callGeminiProxy(model: string, contents: any, config: any) {
-  const { data: { session } } = await supabase.auth.getSession();
-  const token = session?.access_token;
+  const token = await auth.currentUser?.getIdToken();
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json'
@@ -121,6 +120,60 @@ async function retryOperation<T>(operation: () => Promise<T>): Promise<T> {
   throw lastError;
 }
 
+export async function getAvailableModels(): Promise<any[]> {
+  const token = await auth.currentUser?.getIdToken();
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json'
+  };
+  
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const rawKeys = JSON.parse(localStorage.getItem('user_api_keys_raw') || '{}');
+  if (rawKeys.gemini) {
+    headers['x-api-key'] = rawKeys.gemini;
+  }
+
+  try {
+    return await retryOperation(async () => {
+      const response = await fetch('/api/gemini/models', { headers });
+      if (!response.ok) {
+        const errText = await response.text();
+        let errMsg = response.statusText || `HTTP ${response.status}`;
+        try {
+          const errJson = JSON.parse(errText);
+          errMsg = errJson.error || errMsg;
+        } catch (e) {
+          if (errText) errMsg += ` - ${errText.substring(0, 100)}`;
+        }
+        throw new Error(`Failed to fetch models: ${errMsg}`);
+      }
+      const data = await response.json();
+      return data.models || [];
+    });
+  } catch (error) {
+    console.warn("Failed to fetch models from API, using fallback list.", error);
+    // Fallback list of common models
+    return [
+      { name: 'models/gemini-3-flash-preview', displayName: 'Gemini 3 Flash Preview' },
+      { name: 'models/gemini-3.1-pro-preview', displayName: 'Gemini 3.1 Pro Preview' },
+      { name: 'models/gemini-2.5-flash', displayName: 'Gemini 2.5 Flash' },
+      { name: 'models/gemini-2.5-pro', displayName: 'Gemini 2.5 Pro' },
+      { name: 'models/gemini-1.5-flash', displayName: 'Gemini 1.5 Flash' },
+      { name: 'models/gemini-1.5-pro', displayName: 'Gemini 1.5 Pro' }
+    ];
+  }
+}
+
+export function getSelectedModel(): string {
+  if (typeof window !== 'undefined') {
+    return localStorage.getItem('hsk_selected_model') || 'gemini-3-flash-preview';
+  }
+  return 'gemini-3-flash-preview';
+}
+
 // --- Text & Vision ---
 
 export async function generateTutorResponse(
@@ -132,7 +185,7 @@ export async function generateTutorResponse(
   useSearch: boolean,
   useThinking: boolean
 ) {
-  const model = useThinking ? 'gemini-3.1-pro-preview' : 'gemini-3-flash-preview';
+  const model = useThinking ? 'gemini-3.1-pro-preview' : getSelectedModel();
   
   const systemInstruction = `You are an expert Chinese language tutor (HSK Focus). 
   Target Level: ${level}.
@@ -185,7 +238,7 @@ export async function generateTutorResponse(
 }
 
 export async function generateQuiz(topic: string, level: HSKLevel, lang: AppLanguage): Promise<QuizQuestion[]> {
-  const model = 'gemini-3-flash-preview';
+  const model = getSelectedModel();
   const prompt = `Generate 5 multiple-choice questions for Chinese learning.
   Level: ${level}.
   Topic: ${topic || 'General HSK vocabulary/grammar'}.
@@ -215,7 +268,7 @@ export async function generateQuiz(topic: string, level: HSKLevel, lang: AppLang
 }
 
 export async function generateMockExam(level: HSKLevel, lang: AppLanguage): Promise<ExamData> {
-  const model = 'gemini-3-flash-preview';
+  const model = getSelectedModel();
   const prompt = `Generate a mini mock HSK exam for ${level}. 
   Language: ${LANG_NAMES[lang] || lang}.
   Structure:
@@ -257,7 +310,7 @@ export async function generateMockExam(level: HSKLevel, lang: AppLanguage): Prom
 }
 
 export async function generateVocabularyBatch(level: HSKLevel, lang: AppLanguage): Promise<VocabCard[]> {
-  const model = 'gemini-3-flash-preview';
+  const model = getSelectedModel();
   const prompt = `Generate a list of 10 essential vocabulary words for ${level}.
   Translate definitions to ${LANG_NAMES[lang] || lang}.
   Include Pinyin with accurate tone marks.
@@ -288,7 +341,7 @@ export async function generateVocabularyBatch(level: HSKLevel, lang: AppLanguage
 }
 
 export async function generatePracticeSentence(level: HSKLevel, lang: AppLanguage): Promise<{character: string, pinyin: string, translation: string}> {
-  const model = 'gemini-3-flash-preview';
+  const model = getSelectedModel();
   const prompt = `Generate one simple, natural Chinese sentence (5-10 chars) for HSK level ${level}.
   Include Pinyin and translation in ${LANG_NAMES[lang] || lang}.
   Return strictly JSON: { "character": "...", "pinyin": "...", "translation": "..." }`;
@@ -500,7 +553,7 @@ export async function transformImageToBeijing(imageBase64: string): Promise<stri
 }
 
 export async function transcribeAudio(audioBase64: string, mimeType: string = 'audio/wav'): Promise<string> {
-  const model = 'gemini-3-flash-preview';
+  const model = getSelectedModel();
   
   return retryOperation(async () => {
     const response = await callGeminiProxy(model, {
@@ -514,7 +567,7 @@ export async function transcribeAudio(audioBase64: string, mimeType: string = 'a
 }
 
 export async function evaluatePronunciation(audioBase64: string, mimeType: string, referenceText?: string, lang: AppLanguage = AppLanguage.EN): Promise<string> {
-  const model = 'gemini-3-flash-preview';
+  const model = getSelectedModel();
   const prompt = `You are a strict Chinese Pronunciation Coach. 
   1. User Target: "${referenceText || 'Unknown (Transcribe only)'}".
   2. Task: Listen to the audio and compare it against the target.

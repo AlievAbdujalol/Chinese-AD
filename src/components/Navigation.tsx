@@ -3,7 +3,7 @@ import React from 'react';
 import { AppMode, AppLanguage } from '../types';
 import { BarChart2, MessageCircle, Mic, GraduationCap, FileText, BookOpen, Star, LogOut, Cloud, User, Image as ImageIcon, X, Download, Volume2 } from 'lucide-react';
 import { translations } from '../utils/translations';
-import { logout } from '../services/supabase';
+import { logout } from '../services/firebase';
 
 interface NavSidebarProps {
   navItems: { mode: AppMode; icon: React.ReactNode; label: string }[];

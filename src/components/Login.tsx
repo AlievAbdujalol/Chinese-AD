@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { signInWithGoogle, supabase } from '../services/supabase';
+import { signInWithGoogle } from '../services/firebase';
 import { User, Globe } from 'lucide-react';
 import { AppLanguage } from '../types';
 import { translations } from '../utils/translations';
@@ -19,16 +19,8 @@ const Login: React.FC<Props> = ({ onGuestLogin, language, setLanguage }) => {
   const isMounted = useRef(true);
 
   useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      if (event.data?.type === 'SUPABASE_AUTH_SUCCESS') {
-        const { session } = event.data;
-        supabase.auth.setSession(session);
-      }
-    };
-    window.addEventListener('message', handleMessage);
     return () => {
       isMounted.current = false;
-      window.removeEventListener('message', handleMessage);
     };
   }, []);
 
@@ -37,14 +29,8 @@ const Login: React.FC<Props> = ({ onGuestLogin, language, setLanguage }) => {
     setLoading(true);
     setError('');
     try {
-      const data = await signInWithGoogle();
-      if (data?.url) {
-        const width = 500;
-        const height = 600;
-        const left = window.screen.width / 2 - width / 2;
-        const top = window.screen.height / 2 - height / 2;
-        window.open(data.url, 'google_login', `width=${width},height=${height},left=${left},top=${top}`);
-      }
+      await signInWithGoogle();
+      // Firebase handles the redirect/popup automatically
     } catch (err: any) {
       if (!isMounted.current) return;
       console.error("Google login error:", err);

@@ -15,8 +15,8 @@ import SpeakingPractice from './components/SpeakingPractice';
 import Login from './components/Login';
 import { AppMode, AppLanguage, HSKLevel } from './types';
 import { Menu, Globe, Settings, Bell, X, ArrowRight } from 'lucide-react';
-import { supabase } from './services/supabase';
-import { User } from '@supabase/supabase-js';
+import { auth } from './services/firebase';
+import { User, onAuthStateChanged } from 'firebase/auth';
 import { getLevelTheme } from './utils/theme';
 import { updateStudyTime, getUserGoals, getDailyProgress } from './services/db';
 
@@ -58,32 +58,13 @@ const App: React.FC = () => {
   };
 
   useEffect(() => {
-    // Check if we are running in a popup (e.g. OAuth callback)
-    if (window.opener && window.opener !== window) {
-      supabase.auth.getSession().then(({ data: { session } }) => {
-        if (session) {
-          // Notify opener and close
-          window.opener.postMessage({ type: 'SUPABASE_AUTH_SUCCESS', session }, '*');
-          window.close();
-        }
-      });
-    }
-
-    // Check active session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      setUser(firebaseUser);
+      if (firebaseUser) setIsGuest(false);
       setAuthLoading(false);
     });
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      setAuthLoading(false);
-      if (session?.user) setIsGuest(false);
-    });
-
-    return () => subscription.unsubscribe();
+    return () => unsubscribe();
   }, []);
 
   // Study Timer Logic

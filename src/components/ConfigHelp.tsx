@@ -28,31 +28,27 @@ const ConfigHelp: React.FC<Props> = ({ onClose }) => {
           <section>
             <h4 className="font-bold text-gray-900 mb-2 flex items-center">
               <span className="w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs mr-2">1</span>
-              Get Credentials from Google
+              Configure Firebase Authentication
             </h4>
             <ol className="list-decimal list-inside space-y-2 text-sm ml-2">
-              <li>Go to <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer" className="text-blue-600 hover:underline inline-flex items-center">Google Cloud Console <ExternalLink size={10} className="ml-1"/></a>.</li>
-              <li>Create a new <strong>OAuth 2.0 Client ID</strong> (Web application).</li>
-              <li>Add this <strong>Authorized redirect URI</strong>:
-                <code className="block bg-gray-100 p-2 rounded mt-1 select-all font-mono text-xs border border-gray-200">
-                  https://nahcbarqraonfygqelmg.supabase.co/auth/v1/callback
-                </code>
-              </li>
-              <li>Copy the <strong>Client ID</strong> (ends in <code>.apps.googleusercontent.com</code>) and <strong>Client Secret</strong>.</li>
+              <li>Go to your <a href="https://console.firebase.google.com/" target="_blank" rel="noreferrer" className="text-blue-600 hover:underline inline-flex items-center">Firebase Console <ExternalLink size={10} className="ml-1"/></a>.</li>
+              <li>Navigate to <strong>Authentication</strong> &rarr; <strong>Sign-in method</strong>.</li>
+              <li><strong>Enable</strong> Google provider.</li>
+              <li><strong>Enable</strong> Email/Password provider.</li>
+              <li>Click <strong>Save</strong>.</li>
             </ol>
           </section>
 
           <section>
             <h4 className="font-bold text-gray-900 mb-2 flex items-center">
               <span className="w-6 h-6 bg-green-100 text-green-600 rounded-full flex items-center justify-center text-xs mr-2">2</span>
-              Configure Supabase
+              Configure Firebase Firestore
             </h4>
             <ol className="list-decimal list-inside space-y-2 text-sm ml-2">
-              <li>Go to your <a href="https://supabase.com/dashboard" target="_blank" rel="noreferrer" className="text-blue-600 hover:underline inline-flex items-center">Supabase Dashboard <ExternalLink size={10} className="ml-1"/></a>.</li>
-              <li>Navigate to <strong>Authentication</strong> &rarr; <strong>Providers</strong> &rarr; <strong>Google</strong>.</li>
-              <li><strong>Enable</strong> Google provider.</li>
-              <li>Paste the <strong>Client ID</strong> and <strong>Client Secret</strong> from step 1.</li>
-              <li>Click <strong>Save</strong>.</li>
+              <li>Navigate to <strong>Firestore Database</strong>.</li>
+              <li>Click <strong>Create database</strong>.</li>
+              <li>Start in <strong>production mode</strong> or <strong>test mode</strong>.</li>
+              <li>Set up your security rules to allow authenticated users to read/write their own data.</li>
             </ol>
           </section>
 
@@ -63,16 +59,16 @@ const ConfigHelp: React.FC<Props> = ({ onClose }) => {
           </div>
 
           <div className="bg-yellow-50 border border-yellow-100 rounded-xl p-4 text-sm text-yellow-800 mt-4">
-            <strong>Error: "localhost refused to connect"?</strong><br/>
-            This means Supabase is redirecting to the wrong URL.
+            <strong>Error: "auth/unauthorized-domain"?</strong><br/>
+            This means Firebase doesn't recognize your app's domain.
             <ol className="list-decimal list-inside mt-2 space-y-1">
-              <li>Go to <strong>Authentication</strong> &rarr; <strong>URL Configuration</strong>.</li>
-              <li>Add this URL to <strong>Redirect URLs</strong>:
+              <li>Go to <strong>Authentication</strong> &rarr; <strong>Settings</strong> &rarr; <strong>Authorized domains</strong>.</li>
+              <li>Add this domain:
                 <code className="block bg-yellow-100 p-2 rounded mt-1 select-all font-mono text-xs border border-yellow-200 break-all">
-                  {window.location.origin}
+                  {window.location.hostname}
                 </code>
               </li>
-              <li>Click <strong>Save</strong>.</li>
+              <li>Click <strong>Add</strong>.</li>
             </ol>
           </div>
         </div>
@@ -82,7 +78,7 @@ const ConfigHelp: React.FC<Props> = ({ onClose }) => {
             onClick={onClose}
             className="bg-gray-900 text-white font-bold px-6 py-2 rounded-xl hover:bg-gray-800 transition-colors"
           >
-            I'll fix it in Supabase
+            I'll fix it in Firebase
           </button>
         </div>
       </div>

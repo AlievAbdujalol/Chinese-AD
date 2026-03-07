@@ -1,5 +1,5 @@
 import { AppLanguage, HSKLevel, QuizQuestion, ExamData, VocabCard } from "../types";
-import { supabase } from "./supabase";
+import { auth } from "./firebase";
 
 const API_URL = "/api/deepseek";
 
@@ -38,8 +38,7 @@ async function retryOperation<T>(operation: () => Promise<T>): Promise<T> {
 
 async function callDeepSeek(messages: any[], jsonMode: boolean = false) {
   return retryOperation(async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    const token = session?.access_token;
+    const token = await auth.currentUser?.getIdToken();
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json'
