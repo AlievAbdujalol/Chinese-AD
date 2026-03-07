@@ -16,8 +16,6 @@
     "@types/express": "^5.0.6",
     "@types/pg": "^8.18.0",
     "express": "^5.2.1",
-    "firebase": "^12.10.0",
-    "firebase-admin": "^13.7.0",
     "idb": "^8.0.3",
     "lucide-react": "^0.574.0",
     "pg": "^8.19.0",

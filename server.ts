@@ -1,47 +1,12 @@
 import express from "express";
 import { createServer as createViteServer } from "vite";
-import admin from "firebase-admin";
+import { createClient } from "@supabase/supabase-js";
 import { GoogleGenAI } from "@google/genai";
 import crypto from "crypto";
 import pg from "pg";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-
-// Initialize Firebase Admin
-if (!admin.apps.length) {
-  try {
-    const serviceAccountKey = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
-    if (serviceAccountKey) {
-      const serviceAccount = JSON.parse(Buffer.from(serviceAccountKey, 'base64').toString('utf-8'));
-      admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount)
-      });
-      console.log("Firebase Admin initialized successfully.");
-    } else {
-      console.warn("FIREBASE_SERVICE_ACCOUNT_KEY is missing. Firebase Admin not initialized.");
-    }
-  } catch (error) {
-    console.error("Failed to initialize Firebase Admin:", error);
-  }
-}
-
-const db = admin.firestore ? admin.firestore() : null;
-
-// Helper to verify Firebase token
-const verifyToken = async (req: express.Request) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    throw new Error('Unauthorized');
-  }
-  const token = authHeader.split('Bearer ')[1];
-  try {
-    const decodedToken = await admin.auth().verifyIdToken(token);
-    return decodedToken;
-  } catch (error) {
-    throw new Error('Unauthorized');
-  }
-};
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -98,34 +63,148 @@ async function startServer() {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
   });
 
+  // Supabase Client Helper
+  const getSupabase = (req: express.Request) => {
+    const authHeader = req.headers.authorization;
+    const options: any = {};
+    if (authHeader) {
+      options.global = { headers: { Authorization: authHeader } };
+    }
+    
+    // Ensure URL and KEY are present to avoid crashing createClient
+    const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
+    const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || '';
+    
+    if (!supabaseUrl || !supabaseKey || !supabaseUrl.startsWith('http')) {
+      throw new Error('Supabase environment variables are missing or invalid');
+    }
+    
+    return createClient(supabaseUrl, supabaseKey, options);
+  };
+
+  // --- Migration Helper ---
+  async function runMigration() {
+    if (!process.env.DATABASE_URL) {
+      console.warn("Skipping migration: DATABASE_URL not set");
+      return false;
+    }
+    
+    const client = new pg.Client({
+      connectionString: process.env.DATABASE_URL,
+      ssl: { rejectUnauthorized: false }
+    });
+
+    try {
+      await client.connect();
+      const sqlPath = path.join(__dirname, 'supabase_schema.sql');
+      if (fs.existsSync(sqlPath)) {
+        const sql = fs.readFileSync(sqlPath, 'utf8');
+        await client.query(sql);
+        console.log("Migration executed successfully.");
+        return true;
+      }
+      return false;
+    } catch (err) {
+      console.error("Migration failed:", err);
+      return false;
+    } finally {
+      await client.end().catch(() => {});
+    }
+  }
+
+  // --- Auto-Migration on Start ---
+  if (process.env.DATABASE_URL) {
+    console.log("DATABASE_URL found, attempting auto-migration...");
+    runMigration().catch(console.error);
+  } else {
+    console.warn("DATABASE_URL not set. Skipping auto-migration. Please set DATABASE_URL to enable database features.");
+  }
+
   // --- API Key Management Routes ---
+
+  // POST /api/migrate - Run database migration
+  app.post("/api/migrate", async (req, res) => {
+    try {
+      const success = await runMigration();
+      if (success) {
+        res.json({ success: true, message: "Migration completed successfully" });
+      } else {
+        res.status(500).json({ 
+          error: "Migration failed", 
+          details: process.env.DATABASE_URL ? "Check server logs" : "DATABASE_URL not set" 
+        });
+      }
+    } catch (error: any) {
+      console.error("Migration Setup Error:", error);
+      res.status(500).json({ error: "Internal Server Error", details: error.message });
+    }
+  });
 
   // GET /api/keys - Get masked keys
   app.get("/api/keys", async (req, res) => {
     try {
-      if (!db) {
-        return res.status(503).json({ error: "Database unavailable" });
-      }
-
-      let decodedToken;
+      let supabase;
       try {
-        decodedToken = await verifyToken(req);
+        supabase = getSupabase(req);
       } catch (err: any) {
+        console.warn("Supabase not configured, returning 503 for local storage fallback");
+        return res.status(503).json({ error: "Database unavailable", details: err.message });
+      }
+      
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      
+      if (authError || !user) {
         return res.status(401).json({ error: "Unauthorized" });
       }
 
-      const userId = decodedToken.uid;
-      const snapshot = await db.collection('user_api_keys').where('user_id', '==', userId).get();
-      
-      const keys = snapshot.docs.reduce((acc: any, doc) => {
-        const data = doc.data();
-        acc[data.provider] = data.key_hint;
+      let { data, error } = await supabase
+        .from('user_api_keys')
+        .select('provider, key_hint')
+        .eq('user_id', user.id);
+
+      // Handle missing table by attempting migration
+      if (error && (error.code === '42P01' || error.code === 'PGRST205')) {
+        console.warn("Table missing, attempting auto-migration...");
+        const migrationSuccess = await runMigration();
+        
+        if (migrationSuccess) {
+          // Retry fetch
+          const retry = await supabase
+            .from('user_api_keys')
+            .select('provider, key_hint')
+            .eq('user_id', user.id);
+            
+          data = retry.data;
+          error = retry.error;
+        } else {
+          // If migration fails (e.g. no DB URL), return 503 so client triggers fallback
+          console.warn("Database not configured (no URL). Returning 503 to trigger client-side local storage.");
+          return res.status(503).json({ 
+            error: "Database unavailable", 
+            details: "DATABASE_URL is not set. Using local storage mode." 
+          });
+        }
+      }
+
+      if (error) {
+        console.error("DB Error Code:", error.code);
+        console.error("DB Error Message:", error.message);
+        console.error("DB Error Details:", error.details);
+        return res.status(500).json({ error: "Database error", details: error.message });
+      }
+
+      // Transform to object: { gemini: 'hint', deepseek: 'hint' }
+      const keys = (data || []).reduce((acc: any, curr: any) => {
+        acc[curr.provider] = curr.key_hint;
         return acc;
       }, {});
 
       res.json(keys);
     } catch (error: any) {
       console.error("Get Key Error:", error);
+      if (error.message && (error.message.includes('fetch') || error.message.includes('network') || error.message.includes('URL') || error.message.includes('Failed to parse'))) {
+        return res.status(503).json({ error: "Database unavailable", details: error.message });
+      }
       res.status(500).json({ error: "Internal Server Error", details: error.message });
     }
   });
@@ -216,31 +295,59 @@ async function startServer() {
       const keyHint = '••••••••••' + apiKey.slice(-4);
 
       // 3. Save to DB
-      if (!db) {
-        return res.status(503).json({ error: "Database unavailable" });
+      let supabase;
+      try {
+        supabase = getSupabase(req);
+      } catch (err: any) {
+        console.warn("Supabase not configured, returning 503 for local storage fallback");
+        return res.status(503).json({ error: "Database unavailable", details: err.message });
       }
 
-      let decodedToken;
-      try {
-        decodedToken = await verifyToken(req);
-      } catch (err: any) {
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      
+      if (authError || !user) {
         return res.status(401).json({ error: "Unauthorized" });
       }
 
-      const userId = decodedToken.uid;
-      const docId = `${userId}_${provider}`;
+      let { error } = await supabase
+        .from('user_api_keys')
+        .upsert({ 
+          user_id: user.id, 
+          provider: provider,
+          encrypted_key: encryptedKey,
+          key_hint: keyHint,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'user_id, provider' });
 
-      await db.collection('user_api_keys').doc(docId).set({
-        user_id: userId,
-        provider: provider,
-        encrypted_key: encryptedKey,
-        key_hint: keyHint,
-        updated_at: new Date().toISOString()
-      }, { merge: true });
+      // Handle missing table on save
+      if (error && (error.code === '42P01' || error.code === 'PGRST205')) {
+         console.warn("Table missing on save, attempting auto-migration...");
+         const migrationSuccess = await runMigration();
+         if (migrationSuccess) {
+            const retry = await supabase
+              .from('user_api_keys')
+              .upsert({ 
+                user_id: user.id, 
+                provider: provider,
+                encrypted_key: encryptedKey,
+                key_hint: keyHint,
+                updated_at: new Date().toISOString()
+              }, { onConflict: 'user_id, provider' });
+            error = retry.error;
+         }
+      }
+
+      if (error) {
+        console.error("DB Save Error:", error);
+        return res.status(500).json({ error: "Failed to save key" });
+      }
 
       res.json({ success: true, provider, key_hint: keyHint });
     } catch (error: any) {
       console.error("Save Key Error:", error);
+      if (error.message && (error.message.includes('fetch') || error.message.includes('network') || error.message.includes('URL') || error.message.includes('Failed to parse'))) {
+        return res.status(503).json({ error: "Database unavailable", details: error.message });
+      }
       res.status(500).json({ error: "Internal Server Error", details: error.message });
     }
   });
@@ -248,27 +355,39 @@ async function startServer() {
   // DELETE /api/keys - Delete key
   app.delete("/api/keys", async (req, res) => {
     try {
-      const { provider = 'gemini' } = req.body;
+      const { provider = 'gemini' } = req.body; // Or query param? Let's support body for consistency
       
-      if (!db) {
-        return res.status(503).json({ error: "Database unavailable" });
+      let supabase;
+      try {
+        supabase = getSupabase(req);
+      } catch (err: any) {
+        console.warn("Supabase not configured, returning 503 for local storage fallback");
+        return res.status(503).json({ error: "Database unavailable", details: err.message });
       }
 
-      let decodedToken;
-      try {
-        decodedToken = await verifyToken(req);
-      } catch (err: any) {
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      
+      if (authError || !user) {
         return res.status(401).json({ error: "Unauthorized" });
       }
 
-      const userId = decodedToken.uid;
-      const docId = `${userId}_${provider}`;
+      const { error } = await supabase
+        .from('user_api_keys')
+        .delete()
+        .eq('user_id', user.id)
+        .eq('provider', provider);
 
-      await db.collection('user_api_keys').doc(docId).delete();
+      if (error) {
+        console.error("DB Delete Error:", error);
+        return res.status(500).json({ error: "Failed to delete key" });
+      }
 
       res.json({ success: true, provider });
     } catch (error: any) {
       console.error("Delete Key Error:", error);
+      if (error.message && (error.message.includes('fetch') || error.message.includes('network') || error.message.includes('URL') || error.message.includes('Failed to parse'))) {
+        return res.status(503).json({ error: "Database unavailable", details: error.message });
+      }
       res.status(500).json({ error: "Internal Server Error", details: error.message });
     }
   });
@@ -282,21 +401,26 @@ async function startServer() {
         apiKey = req.headers['x-api-key'];
       } else {
         try {
-          if (db) {
-            const decodedToken = await verifyToken(req);
-            const docId = `${decodedToken.uid}_gemini`;
-            const doc = await db.collection('user_api_keys').doc(docId).get();
-            if (doc.exists) {
-              const data = doc.data();
+          const supabase = getSupabase(req);
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user) {
+            try {
+              const { data } = await supabase
+                .from('user_api_keys')
+                .select('encrypted_key')
+                .eq('user_id', user.id)
+                .eq('provider', 'gemini')
+                .single();
+              
               if (data && data.encrypted_key) {
                 try {
                   apiKey = decrypt(data.encrypted_key);
                 } catch (e) {}
               }
-            }
+            } catch (dbError) {}
           }
         } catch (err) {
-          console.warn("Firebase Auth failed, falling back to system key or headers");
+          console.warn("Supabase not configured, falling back to system key or headers");
         }
       }
 
@@ -336,12 +460,18 @@ async function startServer() {
       } else {
         // Check DB
         try {
-          if (db) {
-            const decodedToken = await verifyToken(req);
-            const docId = `${decodedToken.uid}_gemini`;
-            const doc = await db.collection('user_api_keys').doc(docId).get();
-            if (doc.exists) {
-              const data = doc.data();
+          const supabase = getSupabase(req);
+          const { data: { user } } = await supabase.auth.getUser();
+          
+          if (user) {
+            try {
+              const { data, error } = await supabase
+                .from('user_api_keys')
+                .select('encrypted_key')
+                .eq('user_id', user.id)
+                .eq('provider', 'gemini')
+                .single();
+              
               if (data && data.encrypted_key) {
                 try {
                   apiKey = decrypt(data.encrypted_key);
@@ -350,10 +480,13 @@ async function startServer() {
                   console.error("Decryption failed, falling back to system key");
                 }
               }
+            } catch (dbError) {
+               // Ignore DB errors (like missing table) and fallback to system key
+               console.warn("DB fetch failed for key, using system key if available");
             }
           }
         } catch (err) {
-          console.warn("Firebase Auth failed, falling back to system key or headers");
+          console.warn("Supabase not configured, falling back to system key or headers");
         }
       }
 
@@ -430,23 +563,27 @@ async function startServer() {
       let apiKey = process.env.DEEPSEEK_API_KEY; // Default to system key
       
       try {
-        if (db) {
-          const decodedToken = await verifyToken(req);
-          const docId = `${decodedToken.uid}_deepseek`;
-          const doc = await db.collection('user_api_keys').doc(docId).get();
-          if (doc.exists) {
-            const data = doc.data();
-            if (data && data.encrypted_key) {
-              try {
-                apiKey = decrypt(data.encrypted_key);
-              } catch (e) {
-                console.error("Decryption failed for DeepSeek key");
-              }
+        const supabase = getSupabase(req);
+        const { data: { user } } = await supabase.auth.getUser();
+        
+        if (user) {
+          const { data } = await supabase
+            .from('user_api_keys')
+            .select('encrypted_key')
+            .eq('user_id', user.id)
+            .eq('provider', 'deepseek')
+            .single();
+          
+          if (data && data.encrypted_key) {
+            try {
+              apiKey = decrypt(data.encrypted_key);
+            } catch (e) {
+              console.error("Decryption failed for DeepSeek key");
             }
           }
         }
       } catch (err) {
-        console.warn("Firebase Auth failed, falling back to system key");
+        console.warn("Supabase not configured, falling back to system key");
       }
 
       if (!apiKey) {
@@ -481,23 +618,27 @@ async function startServer() {
       let apiKey = process.env.OPENAI_API_KEY;
       
       try {
-        if (db) {
-          const decodedToken = await verifyToken(req);
-          const docId = `${decodedToken.uid}_openai`;
-          const doc = await db.collection('user_api_keys').doc(docId).get();
-          if (doc.exists) {
-            const data = doc.data();
-            if (data && data.encrypted_key) {
-              try {
-                apiKey = decrypt(data.encrypted_key);
-              } catch (e) {
-                console.error("Decryption failed for OpenAI key");
-              }
+        const supabase = getSupabase(req);
+        const { data: { user } } = await supabase.auth.getUser();
+        
+        if (user) {
+          const { data } = await supabase
+            .from('user_api_keys')
+            .select('encrypted_key')
+            .eq('user_id', user.id)
+            .eq('provider', 'openai')
+            .single();
+          
+          if (data && data.encrypted_key) {
+            try {
+              apiKey = decrypt(data.encrypted_key);
+            } catch (e) {
+              console.error("Decryption failed for OpenAI key");
             }
           }
         }
       } catch (err) {
-        console.warn("Firebase Auth failed, falling back to system key");
+        console.warn("Supabase not configured, falling back to system key");
       }
 
       if (!apiKey) {
@@ -532,23 +673,27 @@ async function startServer() {
       let apiKey = process.env.ANTHROPIC_API_KEY;
       
       try {
-        if (db) {
-          const decodedToken = await verifyToken(req);
-          const docId = `${decodedToken.uid}_anthropic`;
-          const doc = await db.collection('user_api_keys').doc(docId).get();
-          if (doc.exists) {
-            const data = doc.data();
-            if (data && data.encrypted_key) {
-              try {
-                apiKey = decrypt(data.encrypted_key);
-              } catch (e) {
-                console.error("Decryption failed for Anthropic key");
-              }
+        const supabase = getSupabase(req);
+        const { data: { user } } = await supabase.auth.getUser();
+        
+        if (user) {
+          const { data } = await supabase
+            .from('user_api_keys')
+            .select('encrypted_key')
+            .eq('user_id', user.id)
+            .eq('provider', 'anthropic')
+            .single();
+          
+          if (data && data.encrypted_key) {
+            try {
+              apiKey = decrypt(data.encrypted_key);
+            } catch (e) {
+              console.error("Decryption failed for Anthropic key");
             }
           }
         }
       } catch (err) {
-        console.warn("Firebase Auth failed, falling back to system key");
+        console.warn("Supabase not configured, falling back to system key");
       }
 
       if (!apiKey) {
@@ -584,23 +729,27 @@ async function startServer() {
       let apiKey = req.headers.authorization || process.env.LEONARDO_API_KEY;
       
       try {
-        if (db) {
-          const decodedToken = await verifyToken(req);
-          const docId = `${decodedToken.uid}_leonardo`;
-          const doc = await db.collection('user_api_keys').doc(docId).get();
-          if (doc.exists) {
-            const data = doc.data();
-            if (data && data.encrypted_key) {
-              try {
-                apiKey = `Bearer ${decrypt(data.encrypted_key)}`;
-              } catch (e) {
-                console.error("Decryption failed for Leonardo key");
-              }
+        const supabase = getSupabase(req);
+        const { data: { user } } = await supabase.auth.getUser();
+        
+        if (user) {
+          const { data } = await supabase
+            .from('user_api_keys')
+            .select('encrypted_key')
+            .eq('user_id', user.id)
+            .eq('provider', 'leonardo')
+            .single();
+          
+          if (data && data.encrypted_key) {
+            try {
+              apiKey = `Bearer ${decrypt(data.encrypted_key)}`;
+            } catch (e) {
+              console.error("Decryption failed for Leonardo key");
             }
           }
         }
       } catch (err) {
-        console.warn("Firebase Auth failed, falling back to system key");
+        console.warn("Supabase not configured, falling back to system key");
       }
 
       if (!apiKey) {
@@ -635,23 +784,27 @@ async function startServer() {
       let apiKey = req.headers.authorization || process.env.LEONARDO_API_KEY;
       
       try {
-        if (db) {
-          const decodedToken = await verifyToken(req);
-          const docId = `${decodedToken.uid}_leonardo`;
-          const doc = await db.collection('user_api_keys').doc(docId).get();
-          if (doc.exists) {
-            const data = doc.data();
-            if (data && data.encrypted_key) {
-              try {
-                apiKey = `Bearer ${decrypt(data.encrypted_key)}`;
-              } catch (e) {
-                console.error("Decryption failed for Leonardo key");
-              }
+        const supabase = getSupabase(req);
+        const { data: { user } } = await supabase.auth.getUser();
+        
+        if (user) {
+          const { data } = await supabase
+            .from('user_api_keys')
+            .select('encrypted_key')
+            .eq('user_id', user.id)
+            .eq('provider', 'leonardo')
+            .single();
+          
+          if (data && data.encrypted_key) {
+            try {
+              apiKey = `Bearer ${decrypt(data.encrypted_key)}`;
+            } catch (e) {
+              console.error("Decryption failed for Leonardo key");
             }
           }
         }
       } catch (err) {
-        console.warn("Firebase Auth failed, falling back to system key");
+        console.warn("Supabase not configured, falling back to system key");
       }
 
       if (!apiKey) {
